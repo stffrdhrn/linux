@@ -425,6 +425,12 @@ config SPI_LANTIQ_SSC
 	  mode. This controller is found on Intel (former Lantiq) SoCs like
 	  the Danube, Falcon, xRX200, xRX300.
 
+config SPI_OCSIMPLE
+	tristate "OpenCores Simple SPI Controller"
+	depends on OPENRISC
+	help
+	  Driver for Simple SPI core from OpenCores.org
+
 config SPI_OC_TINY
 	tristate "OpenCores tiny SPI"
 	depends on GPIOLIB || COMPILE_TEST
