@@ -592,6 +592,12 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config ARC_SCET
+default n
+	bool "Enable SCET timer"
+	---help---
+	  This enables SCET timer as a char device.
+
 source "drivers/char/xillybus/Kconfig"
 
 endmenu
