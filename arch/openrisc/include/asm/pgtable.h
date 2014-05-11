@@ -94,8 +94,8 @@ extern void paging_init(void);
  * 64 MB of vmalloc area is comparable to what's available on other arches.
  */
 
-#define VMALLOC_START	(PAGE_OFFSET-0x04000000)
-#define VMALLOC_END	(PAGE_OFFSET)
+#define VMALLOC_START	(unsigned long)(PAGE_OFFSET-0x04000000)
+#define VMALLOC_END	(unsigned long)(PAGE_OFFSET)
 #define VMALLOC_VMADDR(x) ((unsigned long)(x))
 
 /* Define some higher level generic page attributes.
