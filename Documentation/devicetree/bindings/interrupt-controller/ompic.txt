@@ -1,0 +1,22 @@
+OpenRISC Multicore Programmable Interrupt Controller
+
+Required properties:
+
+- compatible : This should be "ompic"
+- reg : Specifies base physical address and size of the register space. The
+  size can be arbitrary based on the number of cores the controller has
+  been configured to handle, typically 8 bytes per core.
+- interrupt-controller : Identifies the node as an interrupt controller
+- #interrupt-cells : Specifies the number of cells needed to encode an
+  interrupt source. The value shall be 1.
+- interrupts : Specifies the interrupt line to which the ompic is wired.
+
+Example:
+
+ompic: ompic {
+	compatible = "ompic";
+	reg = <0x98000000 16>;
+	#interrupt-cells = <1>;
+	interrupt-controller;
+	interrupts = <1>;
+};
