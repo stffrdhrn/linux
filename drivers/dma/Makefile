@@ -71,3 +71,4 @@ obj-$(CONFIG_ST_FDMA) += st_fdma.o
 
 obj-y += qcom/
 obj-y += xilinx/
+obj-$(CONFIG_WISHBONE_STREAMER_DMA) += wb_streamer-dma.o
