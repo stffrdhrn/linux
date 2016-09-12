@@ -47,40 +47,8 @@ static inline int atomic_sub_return(int i, atomic_t *v)
 	return tmp;
 }
 
-static inline void atomic_clear_mask(unsigned long mask, atomic_t *v)
-{
-	unsigned long tmp;
-
-	__asm__ __volatile__(
-		"1:	l.lwa	%0,0(%1)	\n"
-		"	l.and	%0,%0,%2	\n"
-		"	l.swa	0(%1),%0	\n"
-		"	l.bnf	1b		\n"
-		"	 l.nop			\n"
-		: "=&r"(tmp)
-		: "r"(&v->counter), "r"(mask)
-		: "cc", "memory");
-}
-
-static inline void atomic_set_mask(unsigned long mask, atomic_t *v)
-{
-	unsigned long tmp;
-
-	__asm__ __volatile__(
-		"1:	l.lwa	%0,0(%1)	\n"
-		"	l.or	%0,%0,%2	\n"
-		"	l.swa	0(%1),%0	\n"
-		"	l.bnf	1b		\n"
-		"	 l.nop			\n"
-		: "=&r"(tmp)
-		: "r"(&v->counter), "r"(mask)
-		: "cc", "memory");
-}
-
 #define atomic_add_return	atomic_add_return
 #define atomic_sub_return	atomic_sub_return
-#define atomic_clear_mask	atomic_clear_mask
-#define atomic_set_mask		atomic_set_mask
 
 #endif
 #include <asm-generic/atomic.h>
