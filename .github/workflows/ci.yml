@@ -1,0 +1,47 @@
+name: ci
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  kernel-builds:
+    runs-on: ubuntu-24.04
+    env:
+      LD_LIBRARY_PATH: "/tmp/tools/lib"
+      CONFIG: ${{ matrix.env.CONFIG }}
+      ARCH: ${{ matrix.env.ARCH }}
+      CROSS_COMPILE: ${{ matrix.env.CROSS_COMPILE }}
+    steps:
+      # Checkout Repository
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Install OS Tools
+      - name: Install Tools
+        run: |
+          sudo apt-get install build-essential bc xz-utils git iverilog libelf-dev
+      # Install Toolchain
+      - name: Install Toolchain
+        run: |
+          mkdir -p /tmp/tools/lib
+          cd /tmp/tools
+          curl --remote-name --location \
+            https://github.com/stffrdhrn/or1k-toolchain-build/releases/download/or1k-14.2.0-20250418/or1k-linux-14.2.0-20250418.tar.xz
+          tar xC /tmp/tools -f or1k-linux-14.2.0-20250418.tar.xz
+          export PATH=$PATH:/tmp/tools/or1k-linux/bin/
+          or1k-linux-gcc --version
+      - name: Run Build
+        shell: bash {0}
+        run: |
+          export PATH=$PATH:/tmp/tools/or1k-linux/bin
+          make ARCH=$ARCH $CONFIG && make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE -j2
+
+    strategy:
+      matrix:
+        env:
+          - { ARCH: "openrisc", CONFIG: "defconfig", CROSS_COMPILE: "or1k-linux-" }
+          - { ARCH: "openrisc", CONFIG: "allnoconfig", CROSS_COMPILE: "or1k-linux-" }
+          - { ARCH: "openrisc", CONFIG: "alldefconfig", CROSS_COMPILE: "or1k-linux-" }
+          - { ARCH: "x86", CONFIG: "defconfig", CROSS_COMPILE: "" }
+         # fails with ./usr/include/linux/if.h:28:10: fatal error: sys/socket.h:
+         # No such file or directory
+         #- { ARCH: "openrisc", CONFIG: "allyesconfig", CROSS_COMPILE: "or1k-linux-" }

@@ -114,6 +114,8 @@ modules.order
 !.kunitconfig
 !.mailmap
 !.rustfmt.toml
+!.travis.yml
+!.github/
 
 #
 # Generated include files
