@@ -100,10 +100,12 @@ modules.order
 !.editorconfig
 !.get_maintainer.ignore
 !.gitattributes
+!.github/
 !.gitignore
 !.kunitconfig
 !.mailmap
 !.rustfmt.toml
+!.travis.yml
 
 #
 # Generated include files

@@ -1,0 +1,47 @@
+name: ci
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  kernel-builds:
+    runs-on: ubuntu-latest
+    env:
+      LD_LIBRARY_PATH: "/tmp/tools/lib"
+      CONFIG: ${{ matrix.env.CONFIG }}
+      ARCH: ${{ matrix.env.ARCH }}
+      CROSS_COMPILE: ${{ matrix.env.CROSS_COMPILE }}
+    steps:
+      # Checkout Repository
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      # Install OS Tools
+      - name: Install Tools
+        run: |
+          sudo apt-get install build-essential bc xz-utils git iverilog libelf-dev
+      # Install Toolchain
+      - name: Install Toolchain
+        run: |
+          mkdir -p /tmp/tools
+          cd /tmp/tools
+          curl --remote-name --location \
+            https://buildbot.embecosm.com/job/or1k-gcc-ubuntu2204-release/5/artifact/or1k-embecosm-ubuntu2204-gcc13.1.0.tar.gz
+          tar -xf or1k-embecosm-ubuntu2204-gcc13.1.0.tar.gz
+          export PATH=$PATH:/tmp/tools/or1k-embecosm-ubuntu2204-gcc13.1.0/bin
+          or1k-elf-gcc --version
+      - name: Run Build
+        shell: bash {0}
+        run: |
+          export PATH=$PATH:/tmp/tools/or1k-embecosm-ubuntu2204-gcc13.1.0/bin
+          make ARCH=$ARCH $CONFIG && make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE -j$(($(nproc) + 1))
+
+    strategy:
+      matrix:
+        env:
+          - { ARCH: "openrisc", CONFIG: "defconfig", CROSS_COMPILE: "or1k-elf-" }
+          - { ARCH: "openrisc", CONFIG: "allnoconfig", CROSS_COMPILE: "or1k-elf-" }
+          - { ARCH: "openrisc", CONFIG: "alldefconfig", CROSS_COMPILE: "or1k-elf-" }
+          - { ARCH: "x86", CONFIG: "defconfig", CROSS_COMPILE: "" }
+         # fails with ./usr/include/linux/if.h:28:10: fatal error: sys/socket.h:
+         # No such file or directory
+         #- { ARCH: "openrisc", CONFIG: "allyesconfig", CROSS_COMPILE: "or1k-elf-" }
