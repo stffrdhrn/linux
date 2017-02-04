@@ -121,6 +121,8 @@ modules.order
 !.mailmap
 !.pylintrc
 !.rustfmt.toml
+!.travis.yml
+!.github/
 
 #
 # Generated include files

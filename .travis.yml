@@ -1,0 +1,27 @@
+dist: bionic    # bionic needed for gcc 7.4 retpoline
+sudo: false
+language: c
+branches:
+  - travis
+addons:
+  apt:
+    sources:
+      - ubuntu-toolchain-r-test # get gcc-6
+    packages:
+      - build-essential
+      - bc                      # basic for linux build
+      - libmpc3                 # needed for or1k-linux- toolchain
+      - libelf-dev
+env:
+  matrix:
+    - ARCH=openrisc    CONFIG=defconfig     CROSS_COMPILE=or1k-linux-
+    - ARCH=openrisc    CONFIG=allnoconfig   CROSS_COMPILE=or1k-linux-
+    - ARCH=openrisc    CONFIG=allyesconfig  CROSS_COMPILE=or1k-linux-
+    - ARCH=openrisc    CONFIG=alldefconfig  CROSS_COMPILE=or1k-linux-
+    - ARCH=x86    CONFIG=defconfig
+before_install:
+  - wget https://github.com/stffrdhrn/gcc/releases/download/or1k-9.0.0-20180613/or1k-linux-9.0.0-20180612.tar.xz -O /tmp/gcc.tar.xz
+  - tar -xf /tmp/gcc.tar.xz
+  - sudo ln -s /usr/lib/x86_64-linux-gnu/libmpfr.so.6 /usr/lib/x86_64-linux-gnu/libmpfr.so.4 # because or1k toolchain needs old mpfr
+  - export PATH=$PATH:$PWD/or1k-linux/bin
+script:  make $CONFIG && make -j2
