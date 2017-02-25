@@ -89,12 +89,15 @@ ocspi_set_baudrate_bits(u8* spcr, u8* sper, unsigned int speed)
 {
 	int i;
 
+	struct cpuinfo_or1k *cpuinfo = &cpuinfo_or1k[smp_processor_id()];
+
 	for (i = 0; i <= 11; i++) {
-		if ((cpuinfo.clock_frequency >> (1+i)) <= speed)
+		if ((cpuinfo->clock_frequency >> (1+i)) <= speed)
 			break;
 	}
 
-	pr_debug("Established baudrate %d, wanted %d (i=%d)", cpuinfo.clock_frequency >> (1+i), speed, i);
+	pr_debug("Established baudrate %d, wanted %d (i=%d)",
+		 cpuinfo->clock_frequency >> (1+i), speed, i);
 
 	/* The register values for some cases are weird... fix here */
 	switch (i) {
@@ -374,6 +377,7 @@ static int ocspi_probe(struct platform_device *pdev)
 	struct ocspi *spi;
 	struct resource *r;
 	int status = 0;
+	struct cpuinfo_or1k *cpuinfo = &cpuinfo_or1k[smp_processor_id()];
 
 	master = spi_alloc_master(&pdev->dev, sizeof *spi);
 	if (master == NULL) {
@@ -404,8 +408,8 @@ static int ocspi_probe(struct platform_device *pdev)
 	spi = spi_master_get_devdata(master);
 	spi->master = master;
 
-	spi->max_speed = cpuinfo.clock_frequency >> 1;
-	spi->min_speed = cpuinfo.clock_frequency >> 12;
+	spi->max_speed = cpuinfo->clock_frequency >> 1;
+	spi->min_speed = cpuinfo->clock_frequency >> 12;
 
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (r == NULL) {
