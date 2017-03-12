@@ -15,7 +15,7 @@
  *      2 of the License, or (at your option) any later version.
  */
 
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/elfcore.h>
 #include <linux/sched.h>
 #include <linux/in6.h>
@@ -42,6 +42,11 @@ DECLARE_EXPORT(__muldi3);
 DECLARE_EXPORT(__ashrdi3);
 DECLARE_EXPORT(__ashldi3);
 DECLARE_EXPORT(__lshrdi3);
+DECLARE_EXPORT(__ucmpdi2);
+
+extern unsigned long empty_zero_page[2048];
+EXPORT_SYMBOL(empty_zero_page);
 
 EXPORT_SYMBOL(__copy_tofrom_user);
+EXPORT_SYMBOL(__clear_user);
 EXPORT_SYMBOL(memset);
