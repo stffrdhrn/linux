@@ -37,7 +37,7 @@
 
 	serial0: serial@e0001000 {
 		device_type = "serial";
-		compatible = "litex,litex_uart", "litex_uart";
+		compatible = "litex,litex-uart";
 		reg = <0xe0001000 0x100>;
 		interrupts = <2>;
 	};
