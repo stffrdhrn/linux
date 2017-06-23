@@ -18,10 +18,13 @@
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
 
+static void (*smp_cross_call)(const struct cpumask *, unsigned int);
+
 volatile unsigned long secondary_release = -1;
 struct thread_info *secondary_thread_info;
 
 enum ipi_msg_type {
+	IPI_WAKEUP,
 	IPI_RESCHEDULE,
 	IPI_CALL_FUNC,
 	IPI_CALL_FUNC_SINGLE,
@@ -38,6 +41,7 @@ static int boot_secondary(unsigned int cpu, struct task_struct *idle)
 	spin_lock(&boot_lock);
 
 	secondary_release = cpu;
+	smp_cross_call(cpumask_of(cpu), IPI_WAKEUP);
 
 	/*
 	 * now the secondary core is starting up let it run its
@@ -138,6 +142,9 @@ void handle_IPI(int ipinr)
 	unsigned int cpu = smp_processor_id();
 
 	switch (ipinr) {
+	case IPI_WAKEUP:
+		break;
+
 	case IPI_RESCHEDULE:
 		scheduler_ipi();
 		break;
@@ -156,8 +163,6 @@ void handle_IPI(int ipinr)
 		break;
 	}
 }
-
-static void (*smp_cross_call)(const struct cpumask *, unsigned int);
 
 void smp_send_reschedule(int cpu)
 {
