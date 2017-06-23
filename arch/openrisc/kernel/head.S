@@ -499,6 +499,16 @@ _dispatch_do_ipage_fault:
 	UNHANDLED_EXCEPTION(_vector_0x1f00)
 
     .org 0x2000
+	.global _secondary_evbar
+_secondary_evbar:
+
+    .org 0x2800
+	/* Just disable interrupts and Return */
+	l.ori	r3,r0,SPR_SR_SM
+	l.mtspr	r0,r3,SPR_ESR_BASE
+	l.rfe
+
+    .org 0x3000
 /* ===================================================[ kernel start ]=== */
 
 /*    .text*/
@@ -712,9 +722,32 @@ _flush_tlb:
 
 #ifdef CONFIG_SMP
 secondary_wait:
+	/* Doze the cpu until we are asked to run */
+	/* Enable Interrups */
+	l.mfspr	r25,r0,SPR_SR
+	l.ori	r25,r25,SPR_SR_IEE
+	l.mtspr	r0,r25,SPR_SR
+
+	/* Setup special secondary exception handler */
+	LOAD_SYMBOL_2_GPR(r3, _secondary_evbar)
+	tophys(r25,r3)
+	l.mtspr	r0,r25,SPR_EVBAR
+
+	l.mfspr r25,r0,SPR_PICMR
+	l.ori   r25,r25,0xffff
+	l.mtspr	r0,r25,SPR_PICMR
+
+	/* Doze */
+	l.mfspr r25,r0,SPR_PMR
+	LOAD_SYMBOL_2_GPR(r3, SPR_PMR_DME)
+	l.or    r25,r25,r3
+	l.mtspr r0,r25,SPR_PMR
+
+	/* Restore exception handler */
+	l.mtspr	r0,r0,SPR_EVBAR
+
 	l.mfspr	r25,r0,SPR_COREID
-	l.movhi	r3,hi(secondary_release)
-	l.ori	r3,r3,lo(secondary_release)
+	LOAD_SYMBOL_2_GPR(r3, secondary_release)
 	tophys(r4, r3)
 	l.lwz	r3,0(r4)
 	l.sfeq	r25,r3
