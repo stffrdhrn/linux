@@ -31,7 +31,9 @@
 
 #define OMPIC_IPI_DATA(x)		((x) & 0xffff)
 
-DEFINE_RAW_SPINLOCK(ompic_ipi_lock);
+static struct {
+	unsigned long ops;
+} ipi_data[NR_CPUS];
 
 static void __iomem *ompic_base;
 
@@ -50,38 +52,36 @@ void ompic_raise_softirq(const struct cpumask *mask, unsigned int irq)
 {
 	unsigned int dst_cpu;
 	unsigned int src_cpu = smp_processor_id();
-	int retry = 10000;
-	unsigned long flags;
 
-	raw_spin_lock_irqsave(&ompic_ipi_lock, flags);
 	for_each_cpu(dst_cpu, mask) {
-		while (--retry &&
-		       ompic_readreg(ompic_base, OMPIC_IPI_STAT(dst_cpu)) &
-		       OMPIC_IPI_STAT_IRQ_PENDING) {
-			udelay(1);
-		}
+		set_bit(irq, &ipi_data[dst_cpu].ops);
 
 		ompic_writereg(ompic_base, OMPIC_IPI_CTRL(src_cpu),
 			       OMPIC_IPI_CTRL_IRQ_GEN |
 			       OMPIC_IPI_CTRL_DST(dst_cpu) |
-			       OMPIC_IPI_DATA(irq));
-
-		if (!retry)
-			pr_crit("OMPIC softirq timed out");
+			       OMPIC_IPI_DATA(1));
 	}
-	raw_spin_unlock_irqrestore(&ompic_ipi_lock, flags);
 }
 #endif
 
 irqreturn_t ompic_ipi_handler(int irq, void *dev_id)
 {
-	u32 status;
 	unsigned int cpu = smp_processor_id();
+	unsigned long *pending_ops = &ipi_data[cpu].ops;
+	unsigned long ops;
 
-	status = ompic_readreg(ompic_base, OMPIC_IPI_STAT(cpu));
 	ompic_writereg(ompic_base, OMPIC_IPI_CTRL(cpu), OMPIC_IPI_CTRL_IRQ_ACK);
+	while ((ops = xchg(pending_ops, 0)) != 0) {
+		do {
+			unsigned long ipi;
 
-	handle_IPI(OMPIC_IPI_DATA(status));
+			ipi = ops & -ops;
+			ops &= ~ipi;
+			ipi = __ffs(ipi);
+
+			handle_IPI(ipi);
+		} while (ops);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -99,6 +99,8 @@ int __init ompic_of_init(struct device_node *node, struct device_node *parent)
 
 	if (WARN_ON(!node))
 		return -ENODEV;
+
+	memset(ipi_data, 0, sizeof(ipi_data));
 
 	ompic_base = of_iomap(node, 0);
 
