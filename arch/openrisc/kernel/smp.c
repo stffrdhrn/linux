@@ -18,6 +18,7 @@
 #include <asm/mmu_context.h>
 #include <asm/tlbflush.h>
 #include <asm/cacheflush.h>
+#include <asm/or1k-timer.h>
 
 static void (*smp_cross_call)(const struct cpumask *, unsigned int);
 
@@ -93,13 +94,15 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 
 	ret = boot_secondary(cpu, idle);
 	if (ret == 0) {
-		wait_for_completion_timeout(&cpu_running,
-					    msecs_to_jiffies(1000));
-		if (!cpu_online(cpu))
-			ret = -EIO;
+		if (!wait_for_completion_timeout(&cpu_running,
+					    msecs_to_jiffies(1000))) {
+			pr_crit("CPU%u: failed to start\n", cpu);
+			return -EIO;
+		}
+		synchronise_count_master(cpu);
 	}
 
-	return ret;
+	return 0;
 }
 
 extern void openrisc_clockevent_init(void);
@@ -128,6 +131,8 @@ asmlinkage __init void secondary_start_kernel(void)
 	 */
 	set_cpu_online(cpu, true);
 	complete(&cpu_running);
+
+	synchronise_count_slave(cpu);
 
 	local_irq_enable();
 
