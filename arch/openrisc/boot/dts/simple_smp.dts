@@ -43,7 +43,7 @@
 	 * property.
 	 */
 	pic: pic {
-		compatible = "opencores,or1k-pic-level";
+		compatible = "opencores,or1k-pic";
 		#interrupt-cells = <1>;
 		interrupt-controller;
 	};
