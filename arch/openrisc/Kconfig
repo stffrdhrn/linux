@@ -33,6 +33,7 @@ config OPENRISC
 	select ARCH_USE_QUEUED_SPINLOCKS
 	select ARCH_USE_QUEUED_RWLOCKS
 	select OMPIC if SMP
+	select ARCH_WANT_FRAME_POINTERS
 
 config CPU_BIG_ENDIAN
 	def_bool y
@@ -212,5 +213,9 @@ source "lib/Kconfig"
 menu "Kernel hacking"
 
 source "lib/Kconfig.debug"
+
+config STACKTRACE_SUPPORT
+	bool
+	default y
 
 endmenu
