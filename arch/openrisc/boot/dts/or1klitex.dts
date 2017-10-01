@@ -10,7 +10,7 @@
 	};
 
 	chosen {
-		bootargs = "earlycon earlyprintk debug dummy-irq irq=1";
+		bootargs = "earlycon earlyprintk debug keep_bootcon";
 		stdout-path = &serial0;
 	};
 
