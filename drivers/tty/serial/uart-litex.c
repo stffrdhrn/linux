@@ -26,7 +26,7 @@
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
 
-#define LITEX_UART_NAME		"ttyS"
+#define LITEX_UART_NAME		"ttyLX"
 #define LITEX_NR_UARTS		16
 
 #define LITEX_UART_RX		0x00
@@ -56,12 +56,12 @@
 
 static inline u32 uart_in32(u32 offset, struct uart_port *port)
 {
-	return readl(port->membase + offset);
+	return readb(port->membase + offset);
 }
 
 static inline void uart_out32(u32 val, u32 offset, struct uart_port *port)
 {
-	writel(val, port->membase + offset);
+	writeb(val, port->membase + offset);
 }
 
 static struct uart_port litex_uart_ports[LITEX_NR_UARTS];
@@ -78,13 +78,12 @@ static int litex_uart_receive(struct uart_port *port, int stat)
 		return 0;
 #endif
 	/* RXEMPTY */
-	if ((stat & 1) == 1) {
+	if (stat) {
 		return 0;
 	}
 
 	port->icount.rx++;
 	ch = uart_in32(LITEX_UART_RX, port);
-
 	//stat &= port->read_status_mask;
 	//stat &= ~port->ignore_status_mask;
 
@@ -100,7 +99,7 @@ static int litex_uart_transmit(struct uart_port *port, int stat)
 	if (stat & LITEX_STATUS_TXFULL)
 		return 0;
 #endif
-	if (stat & 1) {
+	if (stat) {
 		return 0;
 	}
 
@@ -128,36 +127,36 @@ static int litex_uart_transmit(struct uart_port *port, int stat)
 static irqreturn_t litex_uart_isr(int irq, void *dev_id)
 {
 	struct uart_port *port = dev_id;
-	int stat, busy, n, r = 0;
+	int stat, busy;
 	unsigned long flags;
 
 	// Clear the pending IRQs
-	r = uart_in32(LITEX_UART_EV_PENDING, port);
-	uart_out32(r, LITEX_UART_EV_PENDING, port);
+	stat = uart_in32(LITEX_UART_EV_PENDING, port);
 
-	busy = 0;
-
-	do {
-		spin_lock_irqsave(&port->lock, flags);
-		stat = uart_in32(LITEX_UART_RXEMPTY, port);
-		busy = litex_uart_receive(port, stat);
-		spin_unlock_irqrestore(&port->lock, flags);
-		n++;
-	} while (busy);
-
-	busy = 0;
+	if (stat & LITEX_EV_RX) {
+		do {
+			spin_lock_irqsave(&port->lock, flags);
+			busy = uart_in32(LITEX_UART_RXEMPTY, port);
+			busy = litex_uart_receive(port, busy);
+			uart_out32(LITEX_EV_RX, LITEX_UART_EV_PENDING, port);
+			spin_unlock_irqrestore(&port->lock, flags);
+		} while (busy);
+	}
 
 	// tx
-	do {
-		spin_lock_irqsave(&port->lock, flags);
-		stat = uart_in32(LITEX_UART_TXFULL, port);
-		busy = litex_uart_transmit(port, stat);
-		spin_unlock_irqrestore(&port->lock, flags);
-		n++;
-	} while (busy);
+	if (stat & LITEX_EV_TX) {
+		do {
+			spin_lock_irqsave(&port->lock, flags);
+			busy = uart_in32(LITEX_UART_TXFULL, port);
+			busy = litex_uart_transmit(port, busy);
+			uart_out32(LITEX_EV_TX, LITEX_UART_EV_PENDING, port);
+			spin_unlock_irqrestore(&port->lock, flags);
+		} while (busy);
+	}
 
 	/* work done? */
 	tty_flip_buffer_push(&port->state->port);
+
 	return IRQ_HANDLED;
 //	if (n >= 1) {
 //	} else {
@@ -169,6 +168,8 @@ static unsigned int litex_uart_tx_empty(struct uart_port *port)
 {
 	unsigned long flags;
 	unsigned int ret;
+
+	// TODO implement by reading LITEX_UART_TXFULL
 
 	return TIOCSER_TEMT;
 }
@@ -209,8 +210,7 @@ static int litex_uart_startup(struct uart_port *port)
 	int ret;
 	unsigned int r;
 
-#if 0 // TODO enable IRQ and ISR
-	ret = request_irq(port->irq, litex_uart_isr, IRQF_TRIGGER_LOW /* IRQF_SHARED */ /* IRQF_TRIGGER_RISING */,
+	ret = request_irq(port->irq, litex_uart_isr, 0 /* IRQF_TRIGGER_LOW */ /* IRQF_SHARED */ /* IRQF_TRIGGER_RISING */,
 			  "litex_uart", port);
 	if (ret) {
 		if (ret == -22) {
@@ -218,7 +218,6 @@ static int litex_uart_startup(struct uart_port *port)
 		}
 		return ret;
 	}
-#endif
 
 	r = uart_in32(LITEX_UART_EV_PENDING, port);
 	if (r != 0) {
@@ -334,8 +333,9 @@ static void litex_uart_config_port(struct uart_port *port, int flags)
 
 static int litex_uart_verify_port(struct uart_port *port, struct serial_struct *ser)
 {
-	/* we don't want the core code to modify any port params */
-	return -EINVAL;
+	if ((ser->type != PORT_UNKNOWN) && (ser->type != PORT_UART_LITEX))
+		return -EINVAL;
+	return 0;
 }
 
 #ifdef CONFIG_CONSOLE_POLL
@@ -436,9 +436,7 @@ static void litex_uart_console_wait_tx(struct uart_port *port)
 
 static void litex_uart_console_putchar(struct uart_port *port, int ch)
 {
-#if 0 // TODO TXFULL
 	litex_uart_console_wait_tx(port);
-#endif
 	uart_out32(ch, LITEX_UART_TX, port);
 }
 
