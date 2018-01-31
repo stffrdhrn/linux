@@ -30,8 +30,14 @@
  * Fall back to compiler barriers if nothing better is provided.
  */
 
+#ifndef CONFIG_SMP
+/*
+ * If your SMP architecture really is Sequentially Consistent, you get
+ * barrier.h to write a nice big comment about it.
+ */
 #ifndef mb
 #define mb()	barrier()
+#endif
 #endif
 
 #ifndef rmb
