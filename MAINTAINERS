@@ -10107,6 +10107,7 @@ F:	Documentation/devicetree/bindings/*/litex,*.yaml
 F:	drivers/soc/litex/litex_soc_ctrl.c
 F:	drivers/tty/serial/liteuart.c
 F:	include/linux/litex.h
+F:	arch/openrisc/boot/dts/or1klitex.dts
 
 LIVE PATCHING
 M:	Josh Poimboeuf <jpoimboe@redhat.com>
