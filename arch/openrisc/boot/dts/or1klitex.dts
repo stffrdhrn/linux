@@ -36,7 +36,7 @@
 	};
 
 	pic: pic {
-		compatible = "opencores,or1k-pic";
+		compatible = "opencores,or1k-pic-level";
 		#interrupt-cells = <1>;
 		interrupt-controller;
 	};
@@ -45,11 +45,23 @@
 		device_type = "serial";
 		compatible = "litex,liteuart";
 		reg = <0xe0002000 0x100>;
+		interrupts = <0>;
 	};
 
 	soc_ctrl0: soc_controller@e0000000 {
-			compatible = "litex,soc-controller";
-			reg = <0xe0000000 0xc>;
-			status = "okay";
+		compatible = "litex,soc-controller";
+		reg = <0xe0000000 0xc>;
+		status = "okay";
 	};
+
+	mac0: mac@e0006000 {
+		compatible = "litex,liteeth";
+		reg = <0xe0006000 0x7c
+		       0xe0005800 0x0a
+		       0xb0000000 0x2000>;
+		tx-fifo-depth = <2>;
+		rx-fifo-depth = <2>;
+		interrupts = <2>;
+	};
+
 };
