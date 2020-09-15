@@ -5,6 +5,7 @@
  *
  */
 
+#include <linux/litex.h>
 #include <linux/etherdevice.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
@@ -74,7 +75,7 @@ struct liteeth {
  */
 static inline void outreg8(u8 val, void __iomem *addr)
 {
-	iowrite32(val, addr);
+	litex_set_reg(addr, 1, val);
 }
 
 static inline void outreg16(u16 val, void __iomem *addr)
@@ -85,7 +86,7 @@ static inline void outreg16(u16 val, void __iomem *addr)
 
 static inline u8 inreg8(void __iomem *addr)
 {
-	return ioread32(addr);
+	return litex_get_reg(addr, 1);
 }
 
 static inline u32 inreg32(void __iomem *addr)
@@ -241,7 +242,7 @@ static int liteeth_start_xmit(struct sk_buff *skb, struct net_device *netdev)
 	outreg8(priv->tx_slot, priv->base + LITEETH_READER_SLOT);
 	outreg16(skb->len, priv->base + LITEETH_READER_LENGTH);
 
-	ret = readb_poll_timeout_atomic(priv->base + LITEETH_READER_READY,
+	ret = readx_poll_timeout_atomic(inreg8, priv->base + LITEETH_READER_READY,
 			val, val, 5, 1000);
 	if (ret == -ETIMEDOUT) {
 		netdev_err(netdev, "LITEETH_READER_READY timed out\n");
@@ -296,7 +297,6 @@ static void liteeth_reset_hw(struct liteeth *priv)
 
 static int liteeth_probe(struct platform_device *pdev)
 {
-	struct device_node *np = pdev->dev.of_node;
 	struct net_device *netdev;
 	void __iomem *buf_base;
 	struct resource *res;
@@ -363,8 +363,8 @@ static int liteeth_probe(struct platform_device *pdev)
 	priv->tx_base = buf_base + priv->num_rx_slots * LITEETH_BUFFER_SIZE;
 	priv->tx_slot = 0;
 
-	mac_addr = of_get_mac_address(np);
-	if (mac_addr && is_valid_ether_addr(mac_addr))
+	mac_addr = of_get_mac_address(pdev->dev.of_node);
+	if (mac_addr && !IS_ERR(mac_addr) && is_valid_ether_addr(mac_addr))
 		memcpy(netdev->dev_addr, mac_addr, ETH_ALEN);
 	else
 		eth_hw_addr_random(netdev);
