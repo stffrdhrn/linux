@@ -17,7 +17,10 @@
 	};
 
 	chosen {
-		bootargs = "console=liteuart";
+		bootargs = "earlycon console=liteuart";
+		linux,initrd-start = <0x07000000>;
+		// Gives initrd        0x2000000 - 32mb
+		linux,initrd-end =   <0x09000000>;
 	};
 
 	memory@0 {
