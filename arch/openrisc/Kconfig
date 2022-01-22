@@ -115,6 +115,31 @@ config OPENRISC_HAVE_INST_DIV
 	default y
 	help
 	  Select this if your implementation has a hardware divide instruction
+
+config OPENRISC_HAVE_INST_CMOV
+	bool "Have instruction l.cmov for conditional move"
+	default y
+	help
+	  Select this if your implementation has it
+
+config OPENRISC_HAVE_INST_ROR
+	bool "Have instruction l.ror for rotate right"
+	default y
+	help
+	  Select this if your implementation has it
+
+config OPENRISC_HAVE_INST_RORI
+	bool "Have instruction l.rori for rotate right with immediate"
+	default y
+	help
+	  Select this if your implementation has it
+
+config OPENRISC_HAVE_INST_SEXT
+	bool "Have instructions l.ext* for sign extension"
+	default y
+	help
+	  Select this if your implementation has it
+
 endmenu
 
 config NR_CPUS
