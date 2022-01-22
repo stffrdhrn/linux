@@ -37,8 +37,7 @@
 	l.movhi gpr,hi(symbol)			;\
 	l.ori   gpr,gpr,lo(symbol)
 
-
-#define UART_BASE_ADD      0x90000000
+#define UART_BASE_ADD      0xe0006800
 
 #define EXCEPTION_SR  (SPR_SR_DME | SPR_SR_IME | SPR_SR_DCE | SPR_SR_ICE | SPR_SR_SM)
 #define SYSCALL_SR  (SPR_SR_DME | SPR_SR_IME | SPR_SR_DCE | SPR_SR_ICE | SPR_SR_IEE | SPR_SR_TEE | SPR_SR_SM)
@@ -297,19 +296,23 @@
 	/* temporary store r3, r9 into r1, r10 */		;\
 	l.addi	r1,r3,0x0					;\
 	l.addi	r10,r9,0x0					;\
-	/* the string referenced by r3 must be low enough */	;\
+	LOAD_SYMBOL_2_GPR(r9,_string_unhandled_exception)	;\
+	tophys	(r3,r9)						;\
 	l.jal	_emergency_print				;\
-	l.ori	r3,r0,lo(_string_unhandled_exception)		;\
+	 l.nop							;\
 	l.mfspr	r3,r0,SPR_NPC					;\
 	l.jal	_emergency_print_nr				;\
-	l.andi	r3,r3,0x1f00					;\
-	/* the string referenced by r3 must be low enough */	;\
+	 l.andi	r3,r3,0x1f00					;\
+	LOAD_SYMBOL_2_GPR(r9,_string_epc_prefix)		;\
+	tophys	(r3,r9)						;\
 	l.jal	_emergency_print				;\
-	l.ori	r3,r0,lo(_string_epc_prefix)			;\
+	 l.nop							;\
 	l.jal	_emergency_print_nr				;\
-	l.mfspr	r3,r0,SPR_EPCR_BASE				;\
+	 l.mfspr r3,r0,SPR_EPCR_BASE				;\
+	LOAD_SYMBOL_2_GPR(r9,_string_nl)			;\
+	tophys	(r3,r9)						;\
 	l.jal	_emergency_print				;\
-	l.ori	r3,r0,lo(_string_nl)				;\
+	 l.nop							;\
 	/* end of printing */					;\
 	l.addi	r3,r1,0x0					;\
 	l.addi	r9,r10,0x0					;\
@@ -358,6 +361,7 @@
 	/* Jump to .init code at _start which lives in the .head section
 	 * and will be discarded after boot.
 	 */
+
 	LOAD_SYMBOL_2_GPR(r15, _start)
 	tophys	(r13,r15)			/* MMU disabled */
 	l.jr	r13
@@ -1530,6 +1534,61 @@ trampoline_out:
 	l.jr	r9
 	l.nop
 
+/*
+ * DESC: Prints ASCII character stored in r7
+ * PRMS: r7	- an ASCII character will be masked
+ *
+ * PREQ: UART at UART_BASE_ADD has to be initialized
+ *
+ * PORT: internally used but restores:
+ * 	 r4	- to store UART_BASE_ADD
+ *	 r5	- for loading OFF_TXFULL / THRE,TEMT
+ *	 r6	- for storing bitmask (SERIAL_8250)
+ */
+ENTRY(_emergency_putc)
+	EMERGENCY_PRINT_STORE_GPR4
+	EMERGENCY_PRINT_STORE_GPR5
+	EMERGENCY_PRINT_STORE_GPR6
+
+	l.movhi r4,hi(UART_BASE_ADD)
+	l.ori	r4,r4,lo(UART_BASE_ADD)
+
+#if defined(CONFIG_SERIAL_LITEUART)
+	// Check OFF_TXFULL status
+1:      l.lwz	r5,4(r4)
+	l.andi	r5,r5,0xff
+	l.sfnei	r5,0
+	l.bf	1b
+	 l.nop
+
+	/* Write character */
+	l.andi	r7,r7,0xff
+	l.sw	0(r4),r7
+#elif defined(CONFIG_SERIAL_8250)
+	// Check UART LSR THRE (hold) bit
+	l.addi  r6,r0,0x20
+1:      l.lbz   r5,5(r4)
+	l.andi  r5,r5,0x20
+	l.sfeq  r5,r6
+	l.bnf   1b
+	 l.nop
+
+	/* Write character */
+	l.sb    0(r4),r7
+
+	// Check UART LSR THRE|TEMT (hold, empty) bits
+	l.addi  r6,r0,0x60
+1:      l.lbz   r5,5(r4)
+	l.andi  r5,r5,0x60
+	l.sfeq  r5,r6
+	l.bnf   1b
+	 l.nop
+#endif
+	EMERGENCY_PRINT_LOAD_GPR6
+	EMERGENCY_PRINT_LOAD_GPR5
+	EMERGENCY_PRINT_LOAD_GPR4
+	l.jr	r9
+	 l.nop
 
 /*
  * DSCR: prints a string referenced by r3.
@@ -1542,53 +1601,41 @@ trampoline_out:
  * POST: caller should be aware that r3, r9 are changed
  */
 ENTRY(_emergency_print)
-	EMERGENCY_PRINT_STORE_GPR4
-	EMERGENCY_PRINT_STORE_GPR5
-	EMERGENCY_PRINT_STORE_GPR6
 	EMERGENCY_PRINT_STORE_GPR7
-2:
-	l.lbz	r7,0(r3)
-	l.sfeq	r7,r0
+	EMERGENCY_PRINT_STORE_GPR9
+
+	/* Load character to r7, check for null terminator */
+2:	l.lbz	r7,0(r3)
+	l.sfeqi	r7,0x0
 	l.bf	9f
-	l.nop
+	 l.nop
 
-// putc:
-	l.movhi r4,hi(UART_BASE_ADD)
-
-	l.addi  r6,r0,0x20
-1:      l.lbz   r5,5(r4)
-	l.andi  r5,r5,0x20
-	l.sfeq  r5,r6
-	l.bnf   1b
-	l.nop
-
-	l.sb    0(r4),r7
-
-	l.addi  r6,r0,0x60
-1:      l.lbz   r5,5(r4)
-	l.andi  r5,r5,0x60
-	l.sfeq  r5,r6
-	l.bnf   1b
-	l.nop
+	l.jal	_emergency_putc
+	 l.nop
 
 	/* next character */
 	l.j	2b
-	l.addi	r3,r3,0x1
+	 l.addi	r3,r3,0x1
 
 9:
+	EMERGENCY_PRINT_LOAD_GPR9
 	EMERGENCY_PRINT_LOAD_GPR7
-	EMERGENCY_PRINT_LOAD_GPR6
-	EMERGENCY_PRINT_LOAD_GPR5
-	EMERGENCY_PRINT_LOAD_GPR4
 	l.jr	r9
-	l.nop
+	 l.nop
 
+/*
+ * DSCR: prints a number in r3 in hex.
+ *
+ * PRMS: r3     	- a 32-bit unsigned integer
+ *
+ * PREQ: UART at UART_BASE_ADD has to be initialized
+ *
+ * POST: caller should be aware that r3, r9 are changed
+ */
 ENTRY(_emergency_print_nr)
-	EMERGENCY_PRINT_STORE_GPR4
-	EMERGENCY_PRINT_STORE_GPR5
-	EMERGENCY_PRINT_STORE_GPR6
 	EMERGENCY_PRINT_STORE_GPR7
 	EMERGENCY_PRINT_STORE_GPR8
+	EMERGENCY_PRINT_STORE_GPR9
 
 	l.addi	r8,r0,32		// shift register
 
@@ -1600,105 +1647,41 @@ ENTRY(_emergency_print_nr)
 	/* don't skip the last zero if number == 0x0 */
 	l.sfeqi	r8,0x4
 	l.bf	2f
-	l.nop
+	 l.nop
 
 	l.sfeq	r7,r0
 	l.bf	1b
-	l.nop
+	 l.nop
 
 2:
 	l.srl	r7,r3,r8
 
 	l.andi	r7,r7,0xf
 	l.sflts	r8,r0
-	l.bf	9f
+	 l.bf	9f
 
+	/* Numbers greater than 9 translate to a-f */
 	l.sfgtui r7,0x9
 	l.bnf	8f
-	l.nop
+	 l.nop
 	l.addi	r7,r7,0x27
 
-8:
-	l.addi	r7,r7,0x30
-// putc:
-	l.movhi r4,hi(UART_BASE_ADD)
-
-	l.addi  r6,r0,0x20
-1:      l.lbz   r5,5(r4)
-	l.andi  r5,r5,0x20
-	l.sfeq  r5,r6
-	l.bnf   1b
-	l.nop
-
-	l.sb    0(r4),r7
-
-	l.addi  r6,r0,0x60
-1:      l.lbz   r5,5(r4)
-	l.andi  r5,r5,0x60
-	l.sfeq  r5,r6
-	l.bnf   1b
-	l.nop
+	/* Convert to ascii and output character */
+8:	l.jal	_emergency_putc
+	 l.addi	r7,r7,0x30
 
 	/* next character */
 	l.j	2b
 	l.addi	r8,r8,-0x4
 
 9:
+	EMERGENCY_PRINT_LOAD_GPR9
 	EMERGENCY_PRINT_LOAD_GPR8
 	EMERGENCY_PRINT_LOAD_GPR7
-	EMERGENCY_PRINT_LOAD_GPR6
-	EMERGENCY_PRINT_LOAD_GPR5
-	EMERGENCY_PRINT_LOAD_GPR4
 	l.jr	r9
-	l.nop
+	 l.nop
 
-
-/*
- * This should be used for debugging only.
- * It messes up the Linux early serial output
- * somehow, so use it sparingly and essentially
- * only if you need to debug something that goes wrong
- * before Linux gets the early serial going.
- *
- * Furthermore, you'll have to make sure you set the
- * UART_DEVISOR correctly according to the system
- * clock rate.
- *
- *
- */
-
-
-
-#define SYS_CLK            20000000
-//#define SYS_CLK            1843200
-#define OR32_CONSOLE_BAUD  115200
-#define UART_DIVISOR       SYS_CLK/(16*OR32_CONSOLE_BAUD)
-
-ENTRY(_early_uart_init)
-	l.movhi	r3,hi(UART_BASE_ADD)
-
-	l.addi	r4,r0,0x7
-	l.sb	0x2(r3),r4
-
-	l.addi	r4,r0,0x0
-	l.sb	0x1(r3),r4
-
-	l.addi	r4,r0,0x3
-	l.sb	0x3(r3),r4
-
-	l.lbz	r5,3(r3)
-	l.ori	r4,r5,0x80
-	l.sb	0x3(r3),r4
-	l.addi	r4,r0,((UART_DIVISOR>>8) & 0x000000ff)
-	l.sb	UART_DLM(r3),r4
-	l.addi  r4,r0,((UART_DIVISOR) & 0x000000ff)
-	l.sb	UART_DLL(r3),r4
-	l.sb	0x3(r3),r5
-
-	l.jr	r9
-	l.nop
-
-	.align	0x1000
+	.align  0x1000
 	.global _secondary_evbar
 _secondary_evbar:
 
@@ -1710,14 +1693,15 @@ _secondary_evbar:
 
 
 	.section .rodata
+
 _string_unhandled_exception:
-	.string "\n\rRunarunaround: Unhandled exception 0x\0"
+	.string "\r\nRunarunaround: Unhandled exception 0x\0"
 
 _string_epc_prefix:
 	.string ": EPC=0x\0"
 
 _string_nl:
-	.string "\n\r\0"
+	.string "\r\n\0"
 
 
 /* ========================================[ page aligned structures ]=== */
