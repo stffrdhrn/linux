@@ -51,7 +51,7 @@ static __always_inline bool ticket_trylock(arch_spinlock_t *lock)
 
 static __always_inline void ticket_unlock(arch_spinlock_t *lock)
 {
-	u16 *ptr = (u16 *)lock + __is_defined(__BIG_ENDIAN);
+	u16 *ptr = (u16 *)lock + IS_ENABLED(CONFIG_CPU_BIG_ENDIAN);
 	u32 val = atomic_read(lock);
 
 	smp_store_release(ptr, (u16)val + 1);
