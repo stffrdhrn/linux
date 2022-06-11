@@ -17,6 +17,7 @@
 #include <asm/prom.h>
 #include <asm/machdep.h>
 #include <asm/smp.h>
+#include "powernv.h"
 
 #define DARN_ERR 0xFFFFFFFFFFFFFFFFul
 
@@ -28,6 +29,12 @@ struct powernv_rng {
 
 static DEFINE_PER_CPU(struct powernv_rng *, powernv_rng);
 
+static struct {
+	struct powernv_rng rng;
+	spinlock_t lock;
+} early_state __initdata = {
+	.lock = __SPIN_LOCK_UNLOCKED(powernv_early_rng)
+};
 
 int powernv_hwrng_present(void)
 {
@@ -84,7 +91,7 @@ static int powernv_get_random_darn(unsigned long *v)
 	return 1;
 }
 
-static int __init initialise_darn(void)
+static int __init initialize_darn(void)
 {
 	unsigned long val;
 	int i;
@@ -98,10 +105,18 @@ static int __init initialise_darn(void)
 			return 0;
 		}
 	}
-
-	pr_warn("Unable to use DARN for get_random_seed()\n");
-
 	return -EIO;
+}
+
+static int __init powernv_get_random_long_early(unsigned long *v)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&early_state.lock, flags);
+	*v = rng_whiten(&early_state.rng, in_be64(early_state.rng.regs));
+	spin_unlock_irqrestore(&early_state.lock, flags);
+
+	return 1;
 }
 
 int powernv_get_random_long(unsigned long *v)
@@ -163,32 +178,51 @@ static __init int rng_create(struct device_node *dn)
 
 	rng_init_per_cpu(rng, dn);
 
-	pr_info_once("Registering arch random hook.\n");
-
 	ppc_md.get_random_seed = powernv_get_random_long;
 
 	return 0;
 }
 
-static __init int rng_init(void)
+void __init powernv_rng_init(void)
 {
 	struct device_node *dn;
-	int rc;
+	struct resource res;
+
+	/* Prefer darn over the rest. */
+	if (!initialize_darn())
+		return;
+
+	dn = of_find_compatible_node(NULL, NULL, "ibm,power-rng");
+	if (!dn)
+		return;
+	if (of_address_to_resource(dn, 0, &res))
+		return;
+	early_state.rng.regs_real = (void __iomem *)res.start;
+	early_state.rng.regs = of_iomap(dn, 0);
+	if (!early_state.rng.regs)
+		return;
+	early_state.rng.mask = in_be64(early_state.rng.regs);
+	ppc_md.get_random_seed = powernv_get_random_long_early;
+}
+
+static __init int powernv_rng_late_init(void)
+{
+	struct device_node *dn;
+
+	/*
+	 * If this didn't get initialized early on, then we're using darn,
+	 * or this isn't available at all, so return early.
+	 */
+	if (ppc_md.get_random_seed != powernv_get_random_long_early)
+		return 0;
+	ppc_md.get_random_seed = NULL;
 
 	for_each_compatible_node(dn, NULL, "ibm,power-rng") {
-		rc = rng_create(dn);
-		if (rc) {
-			pr_err("Failed creating rng for %pOF (%d).\n",
-				dn, rc);
+		if (rng_create(dn))
 			continue;
-		}
-
 		/* Create devices for hwrng driver */
 		of_platform_device_create(dn, NULL, NULL);
 	}
-
-	initialise_darn();
-
 	return 0;
 }
-machine_subsys_initcall(powernv, rng_init);
+machine_subsys_initcall(powernv, powernv_rng_late_init);
