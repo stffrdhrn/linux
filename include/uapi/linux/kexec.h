@@ -45,6 +45,7 @@
 #define KEXEC_ARCH_MIPS_LE (10 << 16)
 #define KEXEC_ARCH_MIPS    ( 8 << 16)
 #define KEXEC_ARCH_AARCH64 (183 << 16)
+#define KEXEC_ARCH_OPENRISC (92 << 16)
 #define KEXEC_ARCH_RISCV   (243 << 16)
 #define KEXEC_ARCH_LOONGARCH	(258 << 16)
 
