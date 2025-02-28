@@ -100,8 +100,7 @@ machine_kexec_cleanup(struct kimage *image)
  */
 void machine_shutdown(void)
 {
-	/* No more interrupts on this core until we are back up. */
-	local_irq_disable();
+	smp_shutdown_nonboot_cpus(reboot_cpu);
 }
 
 static void machine_kexec_mask_interrupts(void)
@@ -188,10 +187,11 @@ machine_kexec(struct kimage *image)
 	struct kimage_arch *internal = &image->arch;
 	unsigned long jump_addr = (unsigned long) image->start;
 	unsigned long first_ind_entry = (unsigned long) &image->head;
-	unsigned long cpu_id = smp_processor_id();
 	unsigned long fdt_addr = internal->fdt_addr;
 	void *control_code_buffer = page_address(image->control_code_page);
 	or1k_kexec_method kexec_method = NULL;
+
+	BUG_ON(num_online_cpus() > 1);
 
 	kexec_method = control_code_buffer;
 
@@ -200,8 +200,7 @@ machine_kexec(struct kimage *image)
 		jump_addr = 0x100;
 	}
 
-	pr_notice("Will call new kernel at %08lx from cpu id %lx\n",
-		  jump_addr, cpu_id);
+	pr_notice("Will call new kernel at %08lx\n", jump_addr);
 	pr_notice("FDT image at %08lx\n", fdt_addr);
 
 	/* Make sure the relocation code is visible to the cpu */
