@@ -53,6 +53,9 @@ struct thread_info *current_thread_info_set[NR_CPUS] = { &init_thread_info, };
 
 void machine_restart(char *cmd)
 {
+	local_irq_disable();
+	smp_send_stop();
+
 	do_kernel_restart(cmd);
 
 	__asm__("l.nop 13");
@@ -82,6 +85,8 @@ static void default_power_off(void)
  */
 void machine_halt(void)
 {
+	local_irq_disable();
+	smp_send_stop();
 	printk(KERN_INFO "*** MACHINE HALT ***\n");
 	__asm__("l.nop 1");
 }
@@ -89,6 +94,8 @@ void machine_halt(void)
 /* If or when software power-off is implemented, add code here.  */
 void machine_power_off(void)
 {
+	local_irq_disable();
+	smp_send_stop();
 	printk(KERN_INFO "*** MACHINE POWER OFF ***\n");
 	do_kernel_power_off();
 	default_power_off();
