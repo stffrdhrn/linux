@@ -42,6 +42,7 @@
 
 #define EXCEPTION_SR  (SPR_SR_DME | SPR_SR_IME | SPR_SR_DCE | SPR_SR_ICE | SPR_SR_SM)
 #define SYSCALL_SR  (SPR_SR_DME | SPR_SR_IME | SPR_SR_DCE | SPR_SR_ICE | SPR_SR_IEE | SPR_SR_TEE | SPR_SR_SM)
+#define DOZE_SR  (SPR_SR_ICE | SPR_SR_IEE | SPR_SR_SM)
 
 /* ============================================[ tmp store locations ]=== */
 
@@ -504,6 +505,254 @@ _dispatch_do_ipage_fault:
 	UNHANDLED_EXCEPTION(_vector_0x1f00)
 
     .org 0x2000
+
+/* ==========================================================[ cache ]=== */
+
+	/* alignment here so we don't change memory offsets with
+	 * memory controller defined
+	 */
+	.align 0x2000
+
+_ic_enable:
+	/* Check if IC present and skip enabling otherwise */
+	l.mfspr r24,r0,SPR_UPR
+	l.andi  r26,r24,SPR_UPR_ICP
+	l.sfeq  r26,r0
+	l.bf	9f
+	l.nop
+
+	/* Disable IC */
+	l.mfspr r6,r0,SPR_SR
+	l.addi  r5,r0,-1
+	l.xori  r5,r5,SPR_SR_ICE
+	l.and   r5,r6,r5
+	l.mtspr r0,r5,SPR_SR
+
+	/* Establish cache block size
+	   If BS=0, 16;
+	   If BS=1, 32;
+	   r14 contain block size
+	*/
+	l.mfspr r24,r0,SPR_ICCFGR
+	l.andi	r26,r24,SPR_ICCFGR_CBS
+	l.srli	r28,r26,7
+	l.ori	r30,r0,16
+	l.sll	r14,r30,r28
+
+	/* Establish number of cache sets
+	   r16 contains number of cache sets
+	   r28 contains log(# of cache sets)
+	*/
+	l.andi  r26,r24,SPR_ICCFGR_NCS
+	l.srli 	r28,r26,3
+	l.ori   r30,r0,1
+	l.sll   r16,r30,r28
+
+	/* Invalidate IC */
+	l.addi  r6,r0,0
+	l.sll   r5,r14,r28
+1:
+	l.mtspr r0,r6,SPR_ICBIR
+	l.sfne  r6,r5
+	l.bf    1b
+	 l.add   r6,r6,r14
+
+	/* Enable IC */
+	l.mfspr r6,r0,SPR_SR
+	l.ori   r6,r6,SPR_SR_ICE
+	l.mtspr r0,r6,SPR_SR
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+	l.nop
+9:
+	l.jr    r9
+	 l.nop
+
+_dc_enable:
+	/* Check if DC present and skip enabling otherwise */
+	l.mfspr r24,r0,SPR_UPR
+	l.andi  r26,r24,SPR_UPR_DCP
+	l.sfeq  r26,r0
+	l.bf	9f
+	l.nop
+
+	/* Disable DC */
+	l.mfspr r6,r0,SPR_SR
+	l.addi  r5,r0,-1
+	l.xori  r5,r5,SPR_SR_DCE
+	l.and   r5,r6,r5
+	l.mtspr r0,r5,SPR_SR
+
+	/* Establish cache block size
+	   If BS=0, 16;
+	   If BS=1, 32;
+	   r14 contain block size
+	*/
+	l.mfspr r24,r0,SPR_DCCFGR
+	l.andi	r26,r24,SPR_DCCFGR_CBS
+	l.srli	r28,r26,7
+	l.ori	r30,r0,16
+	l.sll	r14,r30,r28
+
+	/* Establish number of cache sets
+	   r16 contains number of cache sets
+	   r28 contains log(# of cache sets)
+	*/
+	l.andi  r26,r24,SPR_DCCFGR_NCS
+	l.srli 	r28,r26,3
+	l.ori   r30,r0,1
+	l.sll   r16,r30,r28
+
+	/* Invalidate DC */
+	l.addi  r6,r0,0
+	l.sll   r5,r14,r28
+1:
+	l.mtspr r0,r6,SPR_DCBIR
+	l.sfne  r6,r5
+	l.bf    1b
+	l.add   r6,r6,r14
+
+	/* Enable DC */
+	l.mfspr r6,r0,SPR_SR
+	l.ori   r6,r6,SPR_SR_DCE
+	l.mtspr r0,r6,SPR_SR
+9:
+	l.jr    r9
+	 l.nop
+
+_flush_tlb:
+	/*
+	 *  I N V A L I D A T E   T L B   e n t r i e s
+	 */
+	LOAD_SYMBOL_2_GPR(r5,SPR_DTLBMR_BASE(0))
+	LOAD_SYMBOL_2_GPR(r6,SPR_ITLBMR_BASE(0))
+	l.addi	r7,r0,128 /* Maximum number of sets */
+1:
+	l.mtspr	r5,r0,0x0
+	l.mtspr	r6,r0,0x0
+
+	l.addi	r5,r5,1
+	l.addi	r6,r6,1
+	l.sfeq	r7,r0
+	l.bnf	1b
+	 l.addi	r7,r7,-1
+
+	l.jr	r9
+	 l.nop
+
+#ifdef CONFIG_HOTPLUG_CPU
+SYM_CODE_START(play_dead)
+	/* Setup the environemnt for dozing */
+	LOAD_SYMBOL_2_GPR(r25, DOZE_SR)
+	l.mtspr	r0,r25,SPR_ESR_BASE
+	LOAD_SYMBOL_2_GPR(r30, play_dead_doze)
+	tophys	(r25,r30)
+	l.mtspr	r0,r25,SPR_EPCR_BASE
+	l.rfe
+
+play_dead_doze:
+	/* Doze the cpu until we are asked to run again */
+	/* If we don't have power management skip doze */
+	l.mfspr r25,r0,SPR_UPR
+	l.andi  r25,r25,SPR_UPR_PMP
+	l.sfeq  r25,r0
+	l.bf	secondary_hotplug_release
+	 l.nop
+
+	/* Unmask interrupts */
+	l.mfspr r25,r0,SPR_PICMR
+	l.ori   r25,r25,0xffff
+	l.mtspr	r0,r25,SPR_PICMR
+
+	/* Doze */
+	l.mfspr r25,r0,SPR_PMR
+	LOAD_SYMBOL_2_GPR(r3, SPR_PMR_DME)
+	l.or    r25,r25,r3
+	l.mtspr r0,r25,SPR_PMR
+
+	/* If we wakup just go back to sleep */
+	l.j	play_dead
+	 l.nop
+
+SYM_CODE_END(play_dead)
+play_dead_end:
+
+.section ".rodata"
+SYM_DATA(play_dead_size,
+	.long play_dead_end - play_dead)
+
+	__HEAD
+
+SYM_CODE_START(secondary_hotplug_release)
+	/*
+	 * Check if we actually got the release signal, if not go-back to
+	 * sleep.
+	 */
+	l.mfspr	r25,r0,SPR_COREID
+	LOAD_SYMBOL_2_GPR(r3, secondary_release)
+	tophys	(r4, r3)
+	l.lwz	r3,0(r4)
+	l.sfeq	r25,r3
+	l.bnf	play_dead
+	 l.nop
+
+	/* Fall through to secondary_init */
+SYM_CODE_END(secondary_hotplug_release)
+#endif /* CONFIG_HOTPLUG_CPU */
+
+#ifdef CONFIG_SMP
+secondary_init:
+	/*
+	 * set up initial ksp and current
+	 */
+	LOAD_SYMBOL_2_GPR(r10, secondary_thread_info)
+	tophys	(r30,r10)
+	l.lwz	r10,0(r30)
+	l.addi	r1,r10,THREAD_SIZE
+	tophys	(r30,r10)
+	l.sw	TI_KSP(r30),r1
+
+	l.jal	_ic_enable
+	 l.nop
+
+	l.jal	_dc_enable
+	 l.nop
+
+	l.jal	_flush_tlb
+	 l.nop
+
+	/*
+	 * enable dmmu & immu
+	 */
+	l.mfspr	r30,r0,SPR_SR
+	l.movhi	r28,hi(SPR_SR_DME | SPR_SR_IME)
+	l.ori	r28,r28,lo(SPR_SR_DME | SPR_SR_IME)
+	l.or	r30,r30,r28
+	/*
+	 * This is a bit tricky, we need to switch over from physical addresses
+	 * to virtual addresses on the fly.
+	 * To do that, we first set up ESR with the IME and DME bits set.
+	 * Then EPCR is set to secondary_start and then a l.rfe is issued to
+	 * "jump" to that.
+	 */
+	l.mtspr	r0,r30,SPR_ESR_BASE
+	LOAD_SYMBOL_2_GPR(r30, secondary_start)
+	l.mtspr	r0,r30,SPR_EPCR_BASE
+	l.rfe
+
+secondary_start:
+	LOAD_SYMBOL_2_GPR(r30, secondary_start_kernel)
+	l.jr    r30
+	 l.nop
+#endif
+
 /* ===================================================[ kernel start ]=== */
 
 /*    .text*/
@@ -704,26 +953,6 @@ jump_start_kernel:
 	l.jr    r30
 	 l.nop
 
-_flush_tlb:
-	/*
-	 *  I N V A L I D A T E   T L B   e n t r i e s
-	 */
-	LOAD_SYMBOL_2_GPR(r5,SPR_DTLBMR_BASE(0))
-	LOAD_SYMBOL_2_GPR(r6,SPR_ITLBMR_BASE(0))
-	l.addi	r7,r0,128 /* Maximum number of sets */
-1:
-	l.mtspr	r5,r0,0x0
-	l.mtspr	r6,r0,0x0
-
-	l.addi	r5,r5,1
-	l.addi	r6,r6,1
-	l.sfeq	r7,r0
-	l.bnf	1b
-	 l.addi	r7,r7,-1
-
-	l.jr	r9
-	 l.nop
-
 #ifdef CONFIG_SMP
 secondary_wait:
 	/* Doze the cpu until we are asked to run */
@@ -770,178 +999,11 @@ secondary_check_release:
 	l.sfeq	r25,r3
 	l.bnf	secondary_wait
 	 l.nop
-	/* fall through to secondary_init */
 
-secondary_init:
-	/*
-	 * set up initial ksp and current
-	 */
-	LOAD_SYMBOL_2_GPR(r10, secondary_thread_info)
-	tophys	(r30,r10)
-	l.lwz	r10,0(r30)
-	l.addi	r1,r10,THREAD_SIZE
-	tophys	(r30,r10)
-	l.sw	TI_KSP(r30),r1
-
-	l.jal	_ic_enable
-	 l.nop
-
-	l.jal	_dc_enable
-	 l.nop
-
-	l.jal	_flush_tlb
-	 l.nop
-
-	/*
-	 * enable dmmu & immu
-	 */
-	l.mfspr	r30,r0,SPR_SR
-	l.movhi	r28,hi(SPR_SR_DME | SPR_SR_IME)
-	l.ori	r28,r28,lo(SPR_SR_DME | SPR_SR_IME)
-	l.or	r30,r30,r28
-	/*
-	 * This is a bit tricky, we need to switch over from physical addresses
-	 * to virtual addresses on the fly.
-	 * To do that, we first set up ESR with the IME and DME bits set.
-	 * Then EPCR is set to secondary_start and then a l.rfe is issued to
-	 * "jump" to that.
-	 */
-	l.mtspr	r0,r30,SPR_ESR_BASE
-	LOAD_SYMBOL_2_GPR(r30, secondary_start)
-	l.mtspr	r0,r30,SPR_EPCR_BASE
-	l.rfe
-
-secondary_start:
-	LOAD_SYMBOL_2_GPR(r30, secondary_start_kernel)
-	l.jr    r30
+	l.j	secondary_init
 	 l.nop
 
 #endif
-
-/* ==========================================================[ cache ]=== */
-
-	/* alignment here so we don't change memory offsets with
-	 * memory controller defined
-	 */
-	.align 0x2000
-
-_ic_enable:
-	/* Check if IC present and skip enabling otherwise */
-	l.mfspr r24,r0,SPR_UPR
-	l.andi  r26,r24,SPR_UPR_ICP
-	l.sfeq  r26,r0
-	l.bf	9f
-	l.nop
-
-	/* Disable IC */
-	l.mfspr r6,r0,SPR_SR
-	l.addi  r5,r0,-1
-	l.xori  r5,r5,SPR_SR_ICE
-	l.and   r5,r6,r5
-	l.mtspr r0,r5,SPR_SR
-
-	/* Establish cache block size
-	   If BS=0, 16;
-	   If BS=1, 32;
-	   r14 contain block size
-	*/
-	l.mfspr r24,r0,SPR_ICCFGR
-	l.andi	r26,r24,SPR_ICCFGR_CBS
-	l.srli	r28,r26,7
-	l.ori	r30,r0,16
-	l.sll	r14,r30,r28
-
-	/* Establish number of cache sets
-	   r16 contains number of cache sets
-	   r28 contains log(# of cache sets)
-	*/
-	l.andi  r26,r24,SPR_ICCFGR_NCS
-	l.srli 	r28,r26,3
-	l.ori   r30,r0,1
-	l.sll   r16,r30,r28
-
-	/* Invalidate IC */
-	l.addi  r6,r0,0
-	l.sll   r5,r14,r28
-//        l.mul   r5,r14,r16
-//	l.trap  1
-//	l.addi  r5,r0,IC_SIZE
-1:
-	l.mtspr r0,r6,SPR_ICBIR
-	l.sfne  r6,r5
-	l.bf    1b
-	l.add   r6,r6,r14
- //       l.addi   r6,r6,IC_LINE
-
-	/* Enable IC */
-	l.mfspr r6,r0,SPR_SR
-	l.ori   r6,r6,SPR_SR_ICE
-	l.mtspr r0,r6,SPR_SR
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-	l.nop
-9:
-	l.jr    r9
-	l.nop
-
-_dc_enable:
-	/* Check if DC present and skip enabling otherwise */
-	l.mfspr r24,r0,SPR_UPR
-	l.andi  r26,r24,SPR_UPR_DCP
-	l.sfeq  r26,r0
-	l.bf	9f
-	l.nop
-
-	/* Disable DC */
-	l.mfspr r6,r0,SPR_SR
-	l.addi  r5,r0,-1
-	l.xori  r5,r5,SPR_SR_DCE
-	l.and   r5,r6,r5
-	l.mtspr r0,r5,SPR_SR
-
-	/* Establish cache block size
-	   If BS=0, 16;
-	   If BS=1, 32;
-	   r14 contain block size
-	*/
-	l.mfspr r24,r0,SPR_DCCFGR
-	l.andi	r26,r24,SPR_DCCFGR_CBS
-	l.srli	r28,r26,7
-	l.ori	r30,r0,16
-	l.sll	r14,r30,r28
-
-	/* Establish number of cache sets
-	   r16 contains number of cache sets
-	   r28 contains log(# of cache sets)
-	*/
-	l.andi  r26,r24,SPR_DCCFGR_NCS
-	l.srli 	r28,r26,3
-	l.ori   r30,r0,1
-	l.sll   r16,r30,r28
-
-	/* Invalidate DC */
-	l.addi  r6,r0,0
-	l.sll   r5,r14,r28
-1:
-	l.mtspr r0,r6,SPR_DCBIR
-	l.sfne  r6,r5
-	l.bf    1b
-	l.add   r6,r6,r14
-
-	/* Enable DC */
-	l.mfspr r6,r0,SPR_SR
-	l.ori   r6,r6,SPR_SR_DCE
-	l.mtspr r0,r6,SPR_SR
-9:
-	l.jr    r9
-	l.nop
 
 /* ===============================================[ page table masks ]=== */
 

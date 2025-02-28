@@ -188,7 +188,7 @@ static int __init ompic_of_init(struct device_node *node,
 	if (ret)
 		goto out_irq_disp;
 
-	set_smp_cross_call(ompic_raise_softirq);
+	set_smp_cross_call(ompic_raise_softirq, irq);
 
 	return 0;
 
