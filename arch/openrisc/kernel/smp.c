@@ -284,6 +284,12 @@ void __noreturn arch_cpu_idle_dead(void)
 
 	cpuhp_ap_report_dead();
 
+	/*
+	 * Mask all but the ipi irq which can be used to wake
+	 * us from the dead later.
+	 */
+	mtspr(SPR_PICMR, 1 << ipi_irq);
+
 	play_dead();
 
 	/* We should never get here */
@@ -295,14 +301,14 @@ bool arch_cpu_is_hotpluggable(int cpu)
 	return cpu > 0;
 }
 
-static bool is_cpu_in_dead_spin(unsigned long pc)
+static bool is_cpu_in_dead_spin(unsigned long sp)
 {
-	unsigned long play_dead_start = (unsigned long) __pa(&play_dead);
-	unsigned long play_dead_end = play_dead_start + play_dead_size;
-	bool res = pc >= play_dead_start && pc < play_dead_end;
+	unsigned long secondary_stack_start = (unsigned long) &secondary_stack;
+	unsigned long secondary_stack_end = secondary_stack_start + PAGE_SIZE;
+	bool res = sp > secondary_stack_start && sp <= secondary_stack_end;
 
-	printk("is_cpu_in_dead_spin: start: %08lx - pc: %08lx - end: %08lx -> %d",
-	       play_dead_start, pc, play_dead_end, res);
+	printk("is_cpu_in_dead_spin: start: %08lx - sp: %08lx - end: %08lx -> %d",
+	       secondary_stack_start, sp, secondary_stack_end, res);
 
 	return res;
 }
@@ -313,7 +319,7 @@ static void hotplug_wakeup(int cpu)
 	printk("hotplug_wakeup: CPU%d", cpu);
 
 	/* If the core is within play dead kick it out */
-	if (is_cpu_in_dead_spin(irq_regs->pc)) {
+	if (is_cpu_in_dead_spin(irq_regs->gpr[1])) {
 		irq_regs->pc = __pa(&secondary_hotplug_release);
 		irq_regs->sr = SPR_SR_SM;
 		printk("hotplug_wakeup: release: %08lx, pc: %08lx, sp: %08lx",

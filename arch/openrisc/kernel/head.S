@@ -649,7 +649,15 @@ _flush_tlb:
 
 #ifdef CONFIG_HOTPLUG_CPU
 SYM_CODE_START(play_dead)
-	/* Setup the environemnt for dozing */
+	/*
+	 * Setup the environemnt for dozing:
+	 *  - use a special stack that will not be clobbered after the cpu goes
+	 *    offline during hotplug.  This way when the cpu starts back up after
+	 *    hotplug it does not clobber any data.
+	 *  - Disable the MMU, Timer and dcache to avoid any noise.
+	 */
+	LOAD_SYMBOL_2_GPR(r1, secondary_stack_top)
+
 	LOAD_SYMBOL_2_GPR(r25, DOZE_SR)
 	l.mtspr	r0,r25,SPR_ESR_BASE
 	LOAD_SYMBOL_2_GPR(r30, play_dead_doze)
@@ -666,29 +674,20 @@ play_dead_doze:
 	l.bf	secondary_hotplug_release
 	 l.nop
 
-	/* Unmask interrupts */
-	l.mfspr r25,r0,SPR_PICMR
-	l.ori   r25,r25,0xffff
-	l.mtspr	r0,r25,SPR_PICMR
-
 	/* Doze */
 	l.mfspr r25,r0,SPR_PMR
 	LOAD_SYMBOL_2_GPR(r3, SPR_PMR_DME)
 	l.or    r25,r25,r3
 	l.mtspr r0,r25,SPR_PMR
 
-	/* If we wakup just go back to sleep */
+	/*
+	 * If we wakup just go back to sleep. We will break out when the IPI handler
+	 * wakes us up by overriding the irq_regs PC to secondary_hotplug_release.
+	 */
 	l.j	play_dead
 	 l.nop
 
 SYM_CODE_END(play_dead)
-play_dead_end:
-
-.section ".rodata"
-SYM_DATA(play_dead_size,
-	.long play_dead_end - play_dead)
-
-	__HEAD
 
 SYM_CODE_START(secondary_hotplug_release)
 	/*
@@ -1637,5 +1636,10 @@ swapper_pg_dir:
 _unhandled_stack:
 	.space	8192
 _unhandled_stack_top:
+
+	.global	secondary_stack
+secondary_stack:
+	.space	8192
+secondary_stack_top:
 
 /* ============================================================[ EOF ]=== */
