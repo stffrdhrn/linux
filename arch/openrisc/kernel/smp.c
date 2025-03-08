@@ -113,11 +113,14 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 		return -EIO;
 	}
 	synchronise_count_master(cpu);
-
+	/*
+	 * Clear and flush the secondary_release flag to avoid spurious onlining
+	 * during hotplug shutdown.
+	 */
+	secondary_release = -1;
+	mb();
 	return 0;
 }
-
-static void hotplug_wakeup(int cpu);
 
 asmlinkage void secondary_start_kernel(void)
 {
@@ -159,7 +162,6 @@ void handle_IPI(unsigned int ipi_msg)
 
 	switch (ipi_msg) {
 	case IPI_WAKEUP:
-		hotplug_wakeup(cpu);
 		break;
 
 	case IPI_RESCHEDULE:
@@ -282,13 +284,9 @@ void __noreturn arch_cpu_idle_dead(void)
 {
 	idle_task_exit();
 
-	cpuhp_ap_report_dead();
+	local_irq_disable();
 
-	/*
-	 * Mask all but the ipi irq which can be used to wake
-	 * us from the dead later.
-	 */
-	mtspr(SPR_PICMR, 1 << ipi_irq);
+	cpuhp_ap_report_dead();
 
 	play_dead();
 
@@ -300,35 +298,6 @@ bool arch_cpu_is_hotpluggable(int cpu)
 {
 	return cpu > 0;
 }
-
-static bool is_cpu_in_dead_spin(unsigned long sp)
-{
-	unsigned long secondary_stack_start = (unsigned long) &secondary_stack;
-	unsigned long secondary_stack_end = secondary_stack_start + PAGE_SIZE;
-	bool res = sp > secondary_stack_start && sp <= secondary_stack_end;
-
-	printk("is_cpu_in_dead_spin: start: %08lx - sp: %08lx - end: %08lx -> %d",
-	       secondary_stack_start, sp, secondary_stack_end, res);
-
-	return res;
-}
-
-static void hotplug_wakeup(int cpu)
-{
-	struct pt_regs *irq_regs = get_irq_regs();
-	printk("hotplug_wakeup: CPU%d", cpu);
-
-	/* If the core is within play dead kick it out */
-	if (is_cpu_in_dead_spin(irq_regs->gpr[1])) {
-		irq_regs->pc = __pa(&secondary_hotplug_release);
-		irq_regs->sr = SPR_SR_SM;
-		printk("hotplug_wakeup: release: %08lx, pc: %08lx, sp: %08lx",
-		       (unsigned long) &secondary_hotplug_release, irq_regs->pc,
-		       irq_regs->gpr[1]);
-	}
-}
-#else
-static void hotplug_wakeup(int cpu) { }
 #endif /* CONFIG_HOTPLUG_CPU */
 
 #ifdef CONFIG_KEXEC_CORE

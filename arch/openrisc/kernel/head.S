@@ -42,7 +42,7 @@
 
 #define EXCEPTION_SR  (SPR_SR_DME | SPR_SR_IME | SPR_SR_DCE | SPR_SR_ICE | SPR_SR_SM)
 #define SYSCALL_SR  (SPR_SR_DME | SPR_SR_IME | SPR_SR_DCE | SPR_SR_ICE | SPR_SR_IEE | SPR_SR_TEE | SPR_SR_SM)
-#define DOZE_SR  (SPR_SR_ICE | SPR_SR_IEE | SPR_SR_SM)
+#define DOZE_SR  (SPR_SR_IEE | SPR_SR_SM)
 
 /* ============================================[ tmp store locations ]=== */
 
@@ -504,7 +504,34 @@ _dispatch_do_ipage_fault:
     .org 0x1f00
 	UNHANDLED_EXCEPTION(_vector_0x1f00)
 
-    .org 0x2000
+#ifdef CONFIG_SMP
+	/*
+	 * We want to place this secondary execption vector table in a known
+	 * location that will not move between kernels.  This is because we use
+	 * this for kexec.  When a CPU core is put to sleep during kexec it gets
+	 * it;'s EVBAR register set to this exception table.  It is expected when
+	 * it wakes up in the new kernel that this secondary exception table is in
+	 * the same place and it is used to control bringing the secondary cores
+	 * online.
+	 */
+	.align	0x1000
+	.global _secondary_evbar
+_secondary_evbar:
+	.space 0x800
+
+	/*
+	 * Ensure the CPU returns to a known location in case this is a newly
+	 * kexec'd kernel.
+	 */
+	LOAD_SYMBOL_2_GPR(r9, secondary_check_release)
+	tophys	(r3,r9)
+	l.mtspr r0,r3,SPR_EPCR_BASE
+
+	/* Just disable interrupts and Return */
+	l.ori	r3,r0,SPR_SR_SM
+	l.mtspr	r0,r3,SPR_ESR_BASE
+	l.rfe
+#endif /* CONFIG_SMP */
 
 /* ==========================================================[ cache ]=== */
 
@@ -647,16 +674,16 @@ _flush_tlb:
 	l.jr	r9
 	 l.nop
 
-#ifdef CONFIG_HOTPLUG_CPU
+#ifdef CONFIG_SMP
 SYM_CODE_START(play_dead)
 	/*
 	 * Setup the environemnt for dozing:
-	 *  - use a special stack that will not be clobbered after the cpu goes
-	 *    offline during hotplug.  This way when the cpu starts back up after
-	 *    hotplug it does not clobber any data.
-	 *  - Disable the MMU, Timer and dcache to avoid any noise.
+	 *  - Disable the MMU, Timer and cache to avoid any noise.
+	 *  - Setup special secondary exception handler
 	 */
-	LOAD_SYMBOL_2_GPR(r1, secondary_stack_top)
+	LOAD_SYMBOL_2_GPR(r3, _secondary_evbar)
+	tophys(r25,r3)
+	l.mtspr	r0,r25,SPR_EVBAR
 
 	LOAD_SYMBOL_2_GPR(r25, DOZE_SR)
 	l.mtspr	r0,r25,SPR_ESR_BASE
@@ -671,8 +698,13 @@ play_dead_doze:
 	l.mfspr r25,r0,SPR_UPR
 	l.andi  r25,r25,SPR_UPR_PMP
 	l.sfeq  r25,r0
-	l.bf	secondary_hotplug_release
+	l.bf	secondary_check_release
 	 l.nop
+
+	/* Unmask all interrupts */
+	l.mfspr r25,r0,SPR_PICMR
+	l.ori   r25,r25,0xffff
+	l.mtspr	r0,r25,SPR_PICMR
 
 	/* Doze */
 	l.mfspr r25,r0,SPR_PMR
@@ -680,16 +712,7 @@ play_dead_doze:
 	l.or    r25,r25,r3
 	l.mtspr r0,r25,SPR_PMR
 
-	/*
-	 * If we wakup just go back to sleep. We will break out when the IPI handler
-	 * wakes us up by overriding the irq_regs PC to secondary_hotplug_release.
-	 */
-	l.j	play_dead
-	 l.nop
-
-SYM_CODE_END(play_dead)
-
-SYM_CODE_START(secondary_hotplug_release)
+secondary_check_release:
 	/*
 	 * Check if we actually got the release signal, if not go-back to
 	 * sleep.
@@ -699,14 +722,11 @@ SYM_CODE_START(secondary_hotplug_release)
 	tophys	(r4, r3)
 	l.lwz	r3,0(r4)
 	l.sfeq	r25,r3
-	l.bnf	play_dead
+	l.bnf	play_dead_doze
 	 l.nop
+SYM_CODE_END(play_dead)
 
 	/* Fall through to secondary_init */
-SYM_CODE_END(secondary_hotplug_release)
-#endif /* CONFIG_HOTPLUG_CPU */
-
-#ifdef CONFIG_SMP
 secondary_init:
 	/*
 	 * set up initial ksp and current
@@ -726,6 +746,9 @@ secondary_init:
 
 	l.jal	_flush_tlb
 	 l.nop
+
+	/* We are ready to go - Restore exception handler */
+	l.mtspr	r0,r0,SPR_EVBAR
 
 	/*
 	 * enable dmmu & immu
@@ -750,7 +773,8 @@ secondary_start:
 	LOAD_SYMBOL_2_GPR(r30, secondary_start_kernel)
 	l.jr    r30
 	 l.nop
-#endif
+
+#endif /* CONFIG_SMP */
 
 /* ===================================================[ kernel start ]=== */
 
@@ -818,7 +842,7 @@ _start:
 #ifdef CONFIG_SMP
 	l.mfspr	r26,r0,SPR_COREID
 	l.sfeq	r26,r0
-	l.bnf	secondary_wait
+	l.bnf	play_dead
 	 l.nop
 #endif
 	/*
@@ -951,58 +975,6 @@ jump_start_kernel:
 	LOAD_SYMBOL_2_GPR(r30, start_kernel)
 	l.jr    r30
 	 l.nop
-
-#ifdef CONFIG_SMP
-secondary_wait:
-	/* Doze the cpu until we are asked to run */
-	/* If we dont have power management skip doze */
-	l.mfspr r25,r0,SPR_UPR
-	l.andi  r25,r25,SPR_UPR_PMP
-	l.sfeq  r25,r0
-	l.bf	secondary_check_release
-	 l.nop
-
-	/* Setup special secondary exception handler */
-	LOAD_SYMBOL_2_GPR(r3, _secondary_evbar)
-	tophys(r25,r3)
-	l.mtspr	r0,r25,SPR_EVBAR
-
-	/* Enable Interrupts */
-	l.mfspr	r25,r0,SPR_SR
-	l.ori	r25,r25,SPR_SR_IEE
-	l.mtspr	r0,r25,SPR_SR
-
-	/* Unmask interrupts interrupts */
-	l.mfspr r25,r0,SPR_PICMR
-	l.ori   r25,r25,0xffff
-	l.mtspr	r0,r25,SPR_PICMR
-
-	/* Doze */
-	l.mfspr r25,r0,SPR_PMR
-	LOAD_SYMBOL_2_GPR(r3, SPR_PMR_DME)
-	l.or    r25,r25,r3
-	l.mtspr r0,r25,SPR_PMR
-
-	/* Wakeup - Restore exception handler */
-	l.mtspr	r0,r0,SPR_EVBAR
-
-secondary_check_release:
-	/*
-	 * Check if we actually got the release signal, if not go-back to
-	 * sleep.
-	 */
-	l.mfspr	r25,r0,SPR_COREID
-	LOAD_SYMBOL_2_GPR(r3, secondary_release)
-	tophys(r4, r3)
-	l.lwz	r3,0(r4)
-	l.sfeq	r25,r3
-	l.bnf	secondary_wait
-	 l.nop
-
-	l.j	secondary_init
-	 l.nop
-
-#endif
 
 /* ===============================================[ page table masks ]=== */
 
@@ -1594,17 +1566,6 @@ ENTRY(_early_uart_init)
 	l.jr	r9
 	 l.nop
 
-	.align	0x1000
-	.global _secondary_evbar
-_secondary_evbar:
-
-	.space 0x800
-	/* Just disable interrupts and Return */
-	l.ori	r3,r0,SPR_SR_SM
-	l.mtspr	r0,r3,SPR_ESR_BASE
-	l.rfe
-
-
 	.section .rodata
 _string_unhandled_exception:
 	.string "\r\nRunarunaround: Unhandled exception 0x\0"
@@ -1636,10 +1597,5 @@ swapper_pg_dir:
 _unhandled_stack:
 	.space	8192
 _unhandled_stack_top:
-
-	.global	secondary_stack
-secondary_stack:
-	.space	8192
-secondary_stack_top:
 
 /* ============================================================[ EOF ]=== */

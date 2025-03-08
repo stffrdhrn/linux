@@ -29,8 +29,6 @@ static inline void __cpu_die(unsigned int cpu) { }
 
 /* Hotplug and normal smp spinwait release */
 extern asmlinkage void secondary_start_kernel(void);
-extern void secondary_hotplug_release(void);
 extern void play_dead(void);
-extern unsigned long secondary_stack;
 
 #endif /* __ASM_OPENRISC_SMP_H */
