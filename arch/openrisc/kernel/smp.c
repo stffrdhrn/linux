@@ -51,8 +51,6 @@ static void boot_secondary(unsigned int cpu, struct task_struct *idle)
 	 */
 	spin_lock(&boot_lock);
 
-	printk("boot_secondary: CPU%d ts->stack: %08lx, ti->ksp: %08lx",
-		cpu, (unsigned long) idle->stack, task_thread_info(idle)->ksp);
 	secondary_release = cpu;
 	smp_cross_call(cpumask_of(cpu), IPI_WAKEUP);
 
