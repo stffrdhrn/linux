@@ -13,5 +13,6 @@ obj-$(CONFIG_SMP)		+= smp.o sync-timer.o
 obj-$(CONFIG_STACKTRACE)	+= stacktrace.o
 obj-$(CONFIG_MODULES)		+= module.o
 obj-$(CONFIG_OF)		+= prom.o
+obj-$(CONFIG_KEXEC_CORE)	+= relocate_kernel.o crash_save_regs.o machine_kexec.o
 
 clean:
