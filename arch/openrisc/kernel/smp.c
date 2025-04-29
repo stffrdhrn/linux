@@ -13,7 +13,10 @@
 
 #include <linux/smp.h>
 #include <linux/cpu.h>
+#include <linux/interrupt.h>
+#include <linux/kexec.h>
 #include <linux/sched.h>
+#include <linux/sched/hotplug.h>
 #include <linux/sched/mm.h>
 #include <linux/irq.h>
 #include <linux/of.h>
@@ -23,9 +26,10 @@
 #include <asm/cacheflush.h>
 #include <asm/time.h>
 
-asmlinkage __init void secondary_start_kernel(void);
+typedef void (*smp_stop_action_t)(int cpu);
 
 static void (*smp_cross_call)(const struct cpumask *, unsigned int);
+static unsigned int ipi_irq;
 
 unsigned long secondary_release = -1;
 struct thread_info *secondary_thread_info;
@@ -107,11 +111,16 @@ int __cpu_up(unsigned int cpu, struct task_struct *idle)
 		return -EIO;
 	}
 	synchronise_count_master(cpu);
-
+	/*
+	 * Clear and flush the secondary_release flag to avoid spurious onlining
+	 * during hotplug shutdown.
+	 */
+	secondary_release = -1;
+	mb();
 	return 0;
 }
 
-asmlinkage __init void secondary_start_kernel(void)
+asmlinkage void secondary_start_kernel(void)
 {
 	struct mm_struct *mm = &init_mm;
 	unsigned int cpu = smp_processor_id();
@@ -176,12 +185,24 @@ void arch_smp_send_reschedule(int cpu)
 	smp_cross_call(cpumask_of(cpu), IPI_RESCHEDULE);
 }
 
-static void stop_this_cpu(void *dummy)
+static void stop_this_cpu(void *info)
 {
-	/* Remove this CPU */
-	set_cpu_online(smp_processor_id(), false);
+	int cpu = smp_processor_id();
 
 	local_irq_disable();
+
+	/*
+	 * This IPI callback may have an extra parameter during crash to save
+	 * registers, but we could use this for other things.
+	 */
+	if (info != NULL) {
+		smp_stop_action_t func = (smp_stop_action_t)info;
+		func(cpu);
+	}
+
+	/* Remove this CPU */
+	set_cpu_online(cpu, false);
+
 	/* CPU Doze */
 	if (mfspr(SPR_UPR) & SPR_UPR_PMP)
 		mtspr(SPR_PMR, mfspr(SPR_PMR) | SPR_PMR_DME);
@@ -190,14 +211,27 @@ static void stop_this_cpu(void *dummy)
 		;
 }
 
+/*
+ * The number of CPUs online, not counting this CPU (which may not be
+ * fully online and so not counted in num_online_cpus()).
+ */
+static inline unsigned int num_other_online_cpus(void)
+{
+	unsigned int this_cpu_online = cpu_online(smp_processor_id());
+
+	return num_online_cpus() - this_cpu_online;
+}
+
 void smp_send_stop(void)
 {
 	smp_call_function(stop_this_cpu, NULL, 0);
 }
 
-void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int))
+void __init set_smp_cross_call(void (*fn)(const struct cpumask *, unsigned int),
+			       unsigned int irq)
 {
 	smp_cross_call = fn;
+	ipi_irq = irq;
 }
 
 void arch_send_call_function_single_ipi(int cpu)
@@ -209,6 +243,72 @@ void arch_send_call_function_ipi_mask(const struct cpumask *mask)
 {
 	smp_cross_call(mask, IPI_CALL_FUNC);
 }
+
+#ifdef CONFIG_HOTPLUG_CPU
+/*
+ * __cpu_disable runs on the processor to be shutdown.
+ */
+int __cpu_disable(void)
+{
+	unsigned int cpu = smp_processor_id();
+
+#ifdef CONFIG_GENERIC_ARCH_TOPOLOGY
+	remove_cpu_topology(cpu);
+#endif
+
+	/*
+	 * Take this CPU offline.  Once we clear this, we can't return,
+	 * and we must not schedule until we're ready to give up the cpu.
+	 */
+	set_cpu_online(cpu, false);
+	disable_percpu_irq(ipi_irq);
+
+	/*
+	 * OK - migrate IRQs away from this CPU
+	 */
+	irq_migrate_all_off_this_cpu();
+
+	local_flush_tlb_all();
+
+	return 0;
+}
+
+void arch_cpuhp_cleanup_dead_cpu(unsigned int cpu)
+{
+	pr_notice("CPU%u: shutdown\n", cpu);
+}
+
+void __noreturn arch_cpu_idle_dead(void)
+{
+	idle_task_exit();
+
+	local_irq_disable();
+
+	cpuhp_ap_report_dead();
+
+	play_dead();
+
+	/* We should never get here */
+	BUG();
+}
+
+bool arch_cpu_is_hotpluggable(int cpu)
+{
+	return cpu > 0;
+}
+#endif /* CONFIG_HOTPLUG_CPU */
+
+#ifdef CONFIG_KEXEC_CORE
+static void crash_smp_save_regs(int cpu)
+{
+	crash_save_cpu(get_irq_regs(), cpu);
+}
+
+void crash_smp_send_stop(void)
+{
+	smp_call_function(stop_this_cpu, crash_smp_save_regs, 0);
+}
+#endif
 
 /* TLB flush operations - Performed on each CPU*/
 static inline void ipi_flush_tlb_all(void *ignored)

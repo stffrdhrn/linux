@@ -29,6 +29,7 @@ config OPENRISC
 	select HAVE_PAGE_SIZE_8KB
 	select HAVE_REGS_AND_STACK_ACCESS_API
 	select HAVE_RSEQ
+	select HOTPLUG_CORE_SYNC_DEAD if HOTPLUG_CPU
 	select GENERIC_ATOMIC64
 	select GENERIC_CLOCKEVENTS_BROADCAST
 	select GENERIC_SMP_IDLE_THREAD
@@ -196,6 +197,18 @@ config SMP
 	  than one CPU, say Y.
 
 	  If you don't know what to do here, say N.
+
+config HOTPLUG_CPU
+	bool "Support for hot-pluggable CPUs"
+	depends on SMP
+	select GENERIC_IRQ_MIGRATION
+	help
+
+	  Say Y here to enable turning CPUs off and on. This is neded for kexec
+	  to work properly with SMP kernels. CPUs can be controlled through
+	  /sys/devices/system/cpu.
+
+	  Say N if you want to disable CPU hotplug.
 
 config FPU
 	bool "FPU support"
