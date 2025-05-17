@@ -46,8 +46,7 @@
 	l.sw 	-8(r1),r2	/* store frame pointer */		;\
 	l.sw	-4(r1),r9	/* store return address */		;\
 	l.addi	r2,r1,0		/* move sp to fp */			;\
-	l.jal	trace_op						;\
-	 l.addi	r1,r1,-8						;\
+	CALL_SYMBOL(trace_op, l.addi r1,r1,-8)				;\
 	l.ori	r1,r2,0		/* restore sp */			;\
 	l.lwz	r9,-4(r1)	/* restore return address */		;\
 	l.lwz	r2,-8(r1)	/* restore fp */			;\
@@ -60,8 +59,7 @@
 	l.sw 	-8(r1),r2	/* store frame pointer */		;\
 	l.sw	-4(r1),r9	/* store return address */		;\
 	l.addi	r2,r1,0		/* move sp to fp */			;\
-	l.jal	trace_op						;\
-	 l.addi	r1,r1,-12						;\
+	CALL_SYMBOL(trace_op, l.addi r1,r1,-12)				;\
 	l.ori	r1,r2,0		/* restore sp */			;\
 	l.lwz	r9,-4(r1)	/* restore return address */		;\
 	l.lwz	r2,-8(r1)	/* restore fp */			;\
@@ -91,6 +89,18 @@
 #define TRACE_IRQS_ON
 #define TRACE_IRQS_OFF_ENTRY
 #define TRACE_IRQS_ON_SYSCALL
+#endif
+
+#ifdef CONFIG_CMODEL_LARGE
+#define CALL_SYMBOL(symbol, ...)						\
+	l.movhi	r9,hi(symbol)						;\
+	l.ori	r9,r9,lo(symbol)					;\
+	l.jalr 	r9							;\
+	 __VA_ARGS__
+#else
+#define CALL_SYMBOL(symbol, ...)						\
+	l.jal	symbol							;\
+	 __VA_ARGS__
 #endif
 
 /*
@@ -218,8 +228,7 @@ handler:							;\
 	l.addi	r3,r1,0						;\
 	/* r4 is exception EA */				;\
 	l.addi	r5,r0,vector					;\
-	l.jal	unhandled_exception				;\
-	 l.nop							;\
+	CALL_SYMBOL(unhandled_exception, l.nop)			;\
 	l.j	_ret_from_exception				;\
 	 l.nop
 
@@ -252,8 +261,7 @@ EXCEPTION_ENTRY(_tng_kernel_start)
 EXCEPTION_ENTRY(_bus_fault_handler)
 	CLEAR_LWA_FLAG(r3)
 	/* r4: EA of fault (set by EXCEPTION_HANDLE) */
-	l.jal   do_bus_fault
-	 l.addi  r3,r1,0 /* pt_regs */
+	CALL_SYMBOL(do_bus_fault, l.addi r3,r1,0)
 
 	l.j     _ret_from_exception
 	 l.nop
@@ -327,8 +335,7 @@ EXCEPTION_ENTRY(_data_page_fault_handler)
 2:
 
 	/* call fault.c handler in openrisc/mm/fault.c */
-	l.jal   do_page_fault
-	 l.nop
+	CALL_SYMBOL(do_page_fault, l.nop)
 	l.j     _ret_from_exception
 	 l.nop
 
@@ -349,8 +356,7 @@ EXCEPTION_ENTRY(_insn_page_fault_handler)
 	l.ori	r6,r0,0x0		   // !write access
 
 	/* call fault.c handler in openrisc/mm/fault.c */
-	l.jal   do_page_fault
-	 l.nop
+	CALL_SYMBOL(do_page_fault, l.nop)
 	l.j     _ret_from_exception
 	 l.nop
 
@@ -359,8 +365,7 @@ EXCEPTION_ENTRY(_insn_page_fault_handler)
 
 EXCEPTION_ENTRY(_timer_handler)
 	CLEAR_LWA_FLAG(r3)
-	l.jal	timer_interrupt
-	 l.addi r3,r1,0 /* pt_regs */
+	CALL_SYMBOL(timer_interrupt, l.addi r3,r1,0)
 
 	l.j    _ret_from_intr
 	 l.nop
@@ -370,8 +375,7 @@ EXCEPTION_ENTRY(_timer_handler)
 EXCEPTION_ENTRY(_alignment_handler)
 	CLEAR_LWA_FLAG(r3)
 	/* r4: EA of fault (set by EXCEPTION_HANDLE) */
-	l.jal   do_unaligned_access
-	 l.addi  r3,r1,0 /* pt_regs */
+	CALL_SYMBOL(do_unaligned_access, l.addi r3,r1,0)
 
 	l.j     _ret_from_exception
 	 l.nop
@@ -531,8 +535,7 @@ align_end:
 
 EXCEPTION_ENTRY(_illegal_instruction_handler)
 	/* r4: EA of fault (set by EXCEPTION_HANDLE) */
-	l.jal   do_illegal_instruction
-	 l.addi  r3,r1,0 /* pt_regs */
+	CALL_SYMBOL(do_illegal_instruction, l.addi r3,r1,0)
 
 	l.j     _ret_from_exception
 	 l.nop
@@ -552,8 +555,11 @@ EXCEPTION_ENTRY(_external_irq_handler)
 	l.movhi r3,hi(42f)
 	l.ori	r3,r3,lo(42f)
 	l.sw    0x0(r1),r3
-	l.jal   _printk
-	l.sw    0x4(r1),r4
+	CALL_SYMBOL(_printk, l.sw 0x4(r1),r4)
+	l.movhi	r9,hi(_printk)
+	l.ori	r9,r9,lo(_printk)
+	l.jalr	r9
+	 l.sw    0x4(r1),r4
 	l.addi  r1,r1,0x8
 
 	.section .rodata, "a"
@@ -715,8 +721,7 @@ _syscall_check_trace_leave:
 
 _syscall_check_work:
 #ifdef CONFIG_DEBUG_RSEQ
-	l.jal	rseq_syscall
-	 l.ori	r3,r1,0
+	CALL_SYMBOL(rseq_syscall, l.ori r3,r1,0)
 #endif
 	/* Here we need to disable interrupts */
 	DISABLE_INTERRUPTS(r27,r29)
@@ -813,8 +818,7 @@ _syscall_trace_enter:
 	 *
 	 * Note use of delay slot for setting argument.
 	 */
-	l.jal	do_syscall_trace_enter
-	 l.addi	r3,r1,0
+	CALL_SYMBOL(do_syscall_trace_enter, l.addi r3,r1,0)
 
 	/* Restore arguments (not preserved across do_syscall_trace_enter)
 	 * so that we can do the syscall for real and return to the syscall
@@ -831,8 +835,7 @@ _syscall_trace_enter:
 	 l.lwz	r8,PT_GPR8(r1)
 
 _syscall_trace_leave:
-	l.jal	do_syscall_trace_leave
-	 l.addi	r3,r1,0
+	CALL_SYMBOL(do_syscall_trace_leave, l.addi r3,r1,0)
 
 	l.j	_syscall_check_work
 	 l.nop
@@ -854,8 +857,7 @@ EXCEPTION_ENTRY(_fpe_trap_handler)
 	CLEAR_LWA_FLAG(r3)
 
 	/* r4: EA of fault (set by EXCEPTION_HANDLE) */
-	l.jal   do_fpe_trap
-	 l.addi  r3,r1,0 /* pt_regs */
+	CALL_SYMBOL(do_fpe_trap, l.addi r3,r1,0)
 
 	l.j     _ret_from_exception
 	 l.nop
@@ -865,8 +867,7 @@ EXCEPTION_ENTRY(_fpe_trap_handler)
 EXCEPTION_ENTRY(_trap_handler)
 	CLEAR_LWA_FLAG(r3)
 	/* r4: EA of fault (set by EXCEPTION_HANDLE) */
-	l.jal   do_trap
-	 l.addi  r3,r1,0 /* pt_regs */
+	CALL_SYMBOL(do_trap, l.addi r3,r1,0)
 
 	l.j     _ret_from_exception
 	 l.nop
@@ -957,8 +958,7 @@ _work_pending:
 	 l.nop
 	l.andi	r5,r5,0
 1:
-	l.jal	do_work_pending
-	 l.ori	r3,r1,0			/* pt_regs */
+	CALL_SYMBOL(do_work_pending, l.ori r3,r1,0)
 
 	l.sfeqi	r11,0
 	l.bf	_restore_all
@@ -1006,8 +1006,7 @@ ENTRY(_ret_from_exception)
 	 l.nop
 
 ENTRY(ret_from_fork)
-	l.jal	schedule_tail
-	 l.nop
+	CALL_SYMBOL(schedule_tail, l.nop)
 
 	/* Check if we are a kernel thread */
 	l.sfeqi	r20,0
@@ -1198,13 +1197,11 @@ ENTRY(__sys_fork)
 	 l.ori	r29,r29,lo(sys_fork)
 
 ENTRY(sys_rt_sigreturn)
-	l.jal	_sys_rt_sigreturn
-	 l.addi	r3,r1,0
+	CALL_SYMBOL(_sys_rt_sigreturn, l.addi r3,r1,0)
 	l.sfne	r30,r0
 	l.bnf	_no_syscall_trace
 	 l.nop
-	l.jal	do_syscall_trace_leave
-	 l.addi	r3,r1,0
+	CALL_SYMBOL(do_syscall_trace_leave, l.addi r3,r1,0)
 _no_syscall_trace:
 	l.j	_resume_userspace
 	 l.nop

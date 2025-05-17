@@ -410,13 +410,27 @@ _dispatch_do_ipage_fault:
 
 /* ---[ 0x900: DTLB miss exception ]------------------------------------- */
     .org 0x900
+#ifdef CONFIG_CMODEL_LARGE
+	EXCEPTION_STORE_GPR2
+	LOAD_SYMBOL_2_GPR(r2,boot_dtlb_miss_handler)
+	l.jr	r2
+	 EXCEPTION_LOAD_GPR2
+#else
 	l.j	boot_dtlb_miss_handler
-	l.nop
+	 l.nop
+#endif
 
 /* ---[ 0xa00: ITLB miss exception ]------------------------------------- */
     .org 0xa00
+#ifdef CONFIG_CMODEL_LARGE
+	EXCEPTION_STORE_GPR2
+	LOAD_SYMBOL_2_GPR(r2,boot_itlb_miss_handler)
+	l.jr	r2
+	 EXCEPTION_LOAD_GPR2
+#else
 	l.j	boot_itlb_miss_handler
-	l.nop
+	 l.nop
+#endif
 
 /* ---[ 0xb00: Range exception ]----------------------------------------- */
     .org 0xb00
@@ -1046,8 +1060,9 @@ immediate_translation:
 exit_with_no_dtranslation:
 	/* EA out of memory or not in supervisor mode */
 	EXCEPTION_LOAD_GPR6
-	EXCEPTION_LOAD_GPR4
-	l.j	_dispatch_bus_fault
+	LOAD_SYMBOL_2_GPR(r4,_dispatch_bus_fault)
+	l.jr	r4
+	 EXCEPTION_LOAD_GPR4
 
 /* ---[ boot itlb miss handler ]----------------------------------------- */
 
@@ -1137,10 +1152,10 @@ earlyearly:
 	l.rfe                              // SR <- ESR, PC <- EPC
 
 exit_with_no_itranslation:
-	EXCEPTION_LOAD_GPR4
 	EXCEPTION_LOAD_GPR6
-	l.j    _dispatch_bus_fault
-	l.nop
+	LOAD_SYMBOL_2_GPR(r4,_dispatch_bus_fault)
+	l.jr	r4
+	 EXCEPTION_LOAD_GPR4
 
 /* ====================================================================== */
 /*

@@ -97,9 +97,10 @@ struct __large_struct {
 		"1:	"op" 0(%2),%1\n"			\
 		"2:\n"						\
 		".section .fixup,\"ax\"\n"			\
-		"3:	l.addi %0,r0,%3\n"			\
-		"	l.j 2b\n"				\
-		"	l.nop\n"				\
+		"3:	l.movhi %0,hi(2b)\n"			\
+		"	l.ori %0,%0,lo(2b)\n"			\
+		"	l.jr %0\n"				\
+		"	 l.addi %0,r0,%3\n"			\
 		".previous\n"					\
 		".section __ex_table,\"a\"\n"			\
 		"	.align 2\n"				\
@@ -114,9 +115,10 @@ struct __large_struct {
 		"2:	l.sw 4(%2),%H1\n"			\
 		"3:\n"						\
 		".section .fixup,\"ax\"\n"			\
-		"4:	l.addi %0,r0,%3\n"			\
-		"	l.j 3b\n"				\
-		"	l.nop\n"				\
+		"4:	l.movhi %0,hi(3b)\n"			\
+		"	l.ori %0,%0,lo(3b)\n"			\
+		"	l.jr %0\n"				\
+		"	 l.addi %0,r0,%3\n"			\
 		".previous\n"					\
 		".section __ex_table,\"a\"\n"			\
 		"	.align 2\n"				\
@@ -165,10 +167,11 @@ do {									\
 		"1:	"op" %1,0(%2)\n"		\
 		"2:\n"					\
 		".section .fixup,\"ax\"\n"		\
-		"3:	l.addi %0,r0,%3\n"		\
+		"3:	l.movhi %0,hi(2b)\n"		\
+		"	l.ori %0,%0,lo(2b)\n"		\
 		"	l.addi %1,r0,0\n"		\
-		"	l.j 2b\n"			\
-		"	l.nop\n"			\
+		"	l.jr %0\n"			\
+		"	 l.addi %0,r0,%3\n"		\
 		".previous\n"				\
 		".section __ex_table,\"a\"\n"		\
 		"	.align 2\n"			\
@@ -187,11 +190,12 @@ do {									\
 		"2:	l.lwz %H1,4(%2)\n"		\
 		"3:\n"					\
 		".section .fixup,\"ax\"\n"		\
-		"4:	l.addi %0,r0,%3\n"		\
+		"4:	l.movhi %0,hi(3b)\n"		\
+		"	l.ori %0,%0,lo(3b)\n"		\
 		"	l.addi %1,r0,0\n"		\
 		"	l.addi %H1,r0,0\n"		\
-		"	l.j 3b\n"			\
-		"	l.nop\n"			\
+		"	l.jr %0\n"			\
+		"	 l.addi %0,r0,%3\n"		\
 		".previous\n"				\
 		".section __ex_table,\"a\"\n"		\
 		"	.align 2\n"			\

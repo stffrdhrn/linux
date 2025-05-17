@@ -55,8 +55,10 @@ __copy_tofrom_user:
 
 	.section .fixup, "ax"
 99:
-		l.j     1b
-		l.nop
+		l.movhi	r3,hi(1b)
+		l.ori	r3,r3,lo(1b)
+		l.jr	r3
+		 l.nop
 	.previous
 
 	.section __ex_table, "a"
@@ -92,8 +94,10 @@ __clear_user:
 
 	.section .fixup, "ax"
 99:
-		l.j     1b
-		l.nop
+		l.movhi	r3,hi(1b)
+		l.ori	r3,r3,lo(1b)
+		l.jr	r3
+		 l.nop
 	.previous
 
 	.section __ex_table, "a"

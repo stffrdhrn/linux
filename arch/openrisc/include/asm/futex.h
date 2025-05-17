@@ -18,7 +18,9 @@
 		"	 l.ori	%1, r0, 0		\n"	\
 		"3:					\n"	\
 		".section .fixup,\"ax\"			\n"	\
-		"4:	l.j	3b			\n"	\
+		"4:	l.movhi	%1,hi(3b)		\n"	\
+		"	l.ori	%1,%1,lo(3b)		\n"	\
+		"	l.jr	%1			\n"	\
 		"	 l.addi	%1, r0, %3		\n"	\
 		".previous				\n"	\
 		".section __ex_table,\"a\"		\n"	\
@@ -84,7 +86,9 @@ futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
 		"	 l.nop			\n"	\
 		"3:				\n"	\
 		".section .fixup,\"ax\"		\n"	\
-		"4:	l.j	3b		\n"	\
+		"4:	l.movhi	%0,hi(3b)	\n"	\
+		"	l.ori	%0,%0,lo(3b)	\n"	\
+		"	l.jr	%0		\n"	\
 		"	 l.addi	%0, r0, %5	\n"	\
 		".previous			\n"	\
 		".section __ex_table,\"a\"	\n"	\

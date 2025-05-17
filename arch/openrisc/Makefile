@@ -27,6 +27,10 @@ all: vmlinux.bin
 
 boot := arch/$(ARCH)/boot
 
+ifeq ($(CONFIG_CMODEL_LARGE),y)
+	KBUILD_CFLAGS += -mcmodel=large
+endif
+
 ifeq ($(CONFIG_OPENRISC_HAVE_INST_MUL),y)
 	KBUILD_CFLAGS += $(call cc-option,-mhard-mul)
 else

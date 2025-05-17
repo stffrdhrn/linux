@@ -179,6 +179,23 @@ config OPENRISC_HAVE_INST_SEXT
 
 endmenu
 
+choice
+	prompt "Kernel Code Model"
+	default CMODEL_SMALL if !COMPILE_TEST
+	default CMODEL_LARGE if COMPILE_TEST
+	help
+	  Selects the code model to be used by the GCC compiler.  The large code
+	  model allows for kernel binaries larger than 64MiB.  This is not usual
+	  but it is possible when using allyesconfig.
+
+	  Say SMALL if you are unsure.
+
+	config CMODEL_SMALL
+		bool "small code model"
+	config CMODEL_LARGE
+		bool "large code model"
+endchoice
+
 config NR_CPUS
 	int "Maximum number of CPUs (2-32)"
 	range 2 32
