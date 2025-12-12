@@ -84,6 +84,8 @@ DEFINE_PER_CPU(unsigned long, ops);
 
 static void __iomem *ompic_base;
 
+unsigned int ipi_hwirq;
+
 static inline u32 ompic_readreg(void __iomem *base, loff_t offset)
 {
 	return ioread32be(base + offset);
@@ -144,6 +146,8 @@ static irqreturn_t ompic_ipi_handler(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static int ipi_dummy_dev;
+
 static int __init ompic_of_init(struct device_node *node,
 				struct device_node *parent)
 {
@@ -176,6 +180,13 @@ static int __init ompic_of_init(struct device_node *node,
 		return -ENOMEM;
 	}
 
+	ret = of_property_read_u32_index(node, "interrupts", 0, &ipi_hwirq);
+	if (ret) {
+		pr_err("ompic: failed to parse device hwirq.");
+		return -EINVAL;
+	}
+
+
 	irq = irq_of_parse_and_map(node, 0);
 	if (irq <= 0) {
 		pr_err("ompic: unable to parse device irq");
@@ -183,10 +194,14 @@ static int __init ompic_of_init(struct device_node *node,
 		goto out_unmap;
 	}
 
-	ret = request_irq(irq, ompic_ipi_handler, IRQF_PERCPU,
-				"ompic_ipi", NULL);
-	if (ret)
+	ret = request_percpu_irq(irq, ompic_ipi_handler, "ompic_ipi",
+				 &ipi_dummy_dev);
+
+	if (ret) {
+		pr_err("ompic: failed to request irq %d, error: %d",
+		       irq, ret);
 		goto out_irq_disp;
+	}
 
 	set_smp_cross_call(ompic_raise_softirq, irq);
 

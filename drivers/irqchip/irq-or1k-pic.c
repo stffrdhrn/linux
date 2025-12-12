@@ -118,11 +118,28 @@ static void or1k_pic_handle_irq(struct pt_regs *regs)
 		generic_handle_domain_irq(root_domain, irq);
 }
 
+#ifdef CONFIG_SMP
+extern unsigned int ipi_hwirq;
+
+static int is_ipi_hwirq(irq_hw_number_t hw)
+{
+	return hw == ipi_hwirq;
+}
+#else
+#define is_ipi_hwirq(hw) 0
+#endif
+
 static int or1k_map(struct irq_domain *d, unsigned int irq, irq_hw_number_t hw)
 {
 	struct or1k_pic_dev *pic = d->host_data;
 
-	irq_set_chip_and_handler(irq, &pic->chip, pic->handle);
+	if (is_ipi_hwirq(hw)) {
+		irq_set_percpu_devid(irq);
+		irq_set_chip_and_handler(irq, &pic->chip, handle_percpu_irq);
+	} else {
+		irq_set_chip_and_handler(irq, &pic->chip, pic->handle);
+	}
+
 	irq_set_status_flags(irq, pic->flags);
 
 	return 0;

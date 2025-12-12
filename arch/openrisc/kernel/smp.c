@@ -46,8 +46,7 @@ static void or1k_ipi_enable(void)
 	if (WARN_ON_ONCE(!ipi_irq))
 		return;
 
-	mtspr(SPR_PICMR, mfspr(SPR_PICMR) | 1UL << ipi_irq);
-	//enable_percpu_irq(ipi_irq, 0);
+	enable_percpu_irq(ipi_irq, 0);
 }
 
 static void boot_secondary(unsigned int cpu, struct task_struct *idle)
