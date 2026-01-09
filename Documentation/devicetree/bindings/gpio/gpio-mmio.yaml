@@ -23,6 +23,7 @@ properties:
       - ni,169445-nand-gpio
       - wd,mbl-gpio # Western Digital MyBook Live memory-mapped GPIO controller
       - intel,ixp4xx-expansion-bus-mmio-gpio
+      - opencores,gpio
 
   big-endian: true
 
@@ -159,4 +160,12 @@ examples:
             reg-names = "dat";
             intel,ixp4xx-eb-write-enable = <1>;
         };
+    };
+
+    gpio@91000000 {
+        compatible = "opencores,gpio";
+        reg = <0x91000000 0x1>, <0x91000001 0x1>;
+        reg-names = "dat", "dirout";
+        gpio-controller;
+        #gpio-cells = <2>;
     };
