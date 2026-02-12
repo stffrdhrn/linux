@@ -82,6 +82,43 @@
 
 DEFINE_PER_CPU(unsigned long, ops);
 
+enum ipi_msg_type {
+	IPI_WAKEUP,
+	IPI_RESCHEDULE,
+	IPI_CALL_FUNC,
+	IPI_CALL_FUNC_SINGLE,
+	IPI_MAX,
+};
+
+static const char * const ipi_names[] = {
+	[IPI_WAKEUP]		= "Wakeup IPIs",
+	[IPI_RESCHEDULE]	= "Rescheduling IPIs",
+	[IPI_CALL_FUNC]		= "Function call IPIs",
+	[IPI_CALL_FUNC_SINGLE]	= "Function single call IPIs",
+};
+
+struct ipistats {
+	int sent[IPI_MAX];
+	int recv[IPI_MAX];
+};
+static DEFINE_PER_CPU(struct ipistats, ipistats);
+
+void dump_ipistats(int cpu);
+void dump_ipistats(int cpu)
+{
+	struct ipistats *stats = &per_cpu(ipistats, cpu);
+	unsigned int i;
+
+	pr_info("IPI stats:\n");
+	for (i = 0; i < IPI_MAX; i++) {
+		pr_info("%-26s sent: %8d recv: %8d\n",
+			ipi_names[i],
+			stats->sent[i],
+			stats->recv[i]);
+	}
+}
+
+
 static void __iomem *ompic_base;
 
 static inline u32 ompic_readreg(void __iomem *base, loff_t offset)
@@ -100,8 +137,12 @@ static void ompic_raise_softirq(const struct cpumask *mask,
 	unsigned int dst_cpu;
 	unsigned int src_cpu = smp_processor_id();
 
+	struct ipistats *stats = &per_cpu(ipistats, src_cpu);
+
 	for_each_cpu(dst_cpu, mask) {
 		set_bit(ipi_msg, &per_cpu(ops, dst_cpu));
+
+		stats->sent[ipi_msg]++;
 
 		/*
 		 * On OpenRISC the atomic set_bit() call implies a memory
@@ -122,6 +163,8 @@ static irqreturn_t ompic_ipi_handler(int irq, void *dev_id)
 	unsigned long *pending_ops = &per_cpu(ops, cpu);
 	unsigned long ops;
 
+	struct ipistats *stats = &per_cpu(ipistats, cpu);
+
 	ompic_writereg(ompic_base, OMPIC_CTRL(cpu), OMPIC_CTRL_IRQ_ACK);
 	while ((ops = xchg(pending_ops, 0)) != 0) {
 
@@ -136,6 +179,8 @@ static irqreturn_t ompic_ipi_handler(int irq, void *dev_id)
 
 			ipi_msg = __ffs(ops);
 			ops &= ~(1UL << ipi_msg);
+
+			stats->recv[ipi_msg]++;
 
 			handle_IPI(ipi_msg);
 		} while (ops);

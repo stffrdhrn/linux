@@ -74,6 +74,8 @@ void show_stack(struct task_struct *task, unsigned long *esp, const char *loglvl
 	unwind_stack((void *)loglvl, esp, print_trace);
 }
 
+void dump_ipistats(int cpu);
+
 void show_registers(struct pt_regs *regs)
 {
 	int i;
@@ -149,6 +151,8 @@ bad:
 			print_data(regs->pc, word, i);
 		}
 	}
+	pr_info("\n");
+	dump_ipistats(smp_processor_id());
 	pr_info("\n");
 }
 
