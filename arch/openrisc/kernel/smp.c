@@ -138,6 +138,9 @@ asmlinkage __init void secondary_start_kernel(void)
 	synchronise_count_slave(cpu);
 	set_cpu_online(cpu, true);
 
+	// Enable IPIs, hack
+	mtspr(SPR_PICMR, mfspr(SPR_PICMR) | 0x2);
+
 	local_irq_enable();
 	/*
 	 * OK, it's off to the idle thread for us
