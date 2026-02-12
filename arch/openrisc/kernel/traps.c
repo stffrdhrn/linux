@@ -87,8 +87,8 @@ void show_registers(struct pt_regs *regs)
 		in_kernel = 0;
 
 	pr_info("CPU #: %d\n"
-		"   PC: %08lx    SR: %08lx    SP: %08lx\n",
-		smp_processor_id(), regs->pc, regs->sr, regs->sp);
+		"   PC: %08lx    SR: %08lx    SP: %08lx PICMR: %08lx\n",
+		smp_processor_id(), regs->pc, regs->sr, regs->sp, mfspr(SPR_PICMR));
 	pr_info("GPR00: %08lx GPR01: %08lx GPR02: %08lx GPR03: %08lx\n",
 		0L, regs->gpr[1], regs->gpr[2], regs->gpr[3]);
 	pr_info("GPR04: %08lx GPR05: %08lx GPR06: %08lx GPR07: %08lx\n",
